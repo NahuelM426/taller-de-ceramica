@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { AddButton, Empty, FormModal, Screen, ui } from "@/components/ui";
+import { AddButton, Empty, Screen, ui } from "@/components/ui";
 import { AgregarPersonaModal } from "@/components/agenda/AgregarPersonaModal";
 import { CalendarioFechaModal } from "@/components/agenda/CalendarioFechaModal";
 import { ModeloPersonaModal } from "@/components/agenda/ModeloPersonaModal";
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
+import { DetalleDiaModal } from "@/components/calendario/DetalleDiaModal";
 import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
 import {
   agendaDelMes, asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
@@ -21,11 +22,10 @@ import { textoHorarioAviso } from "@/lib/horarios";
 import { notificacionesDisponibles, reprogramarNotificaciones } from "@/lib/notifications";
 import { TipoOcupacion } from "@/lib/seleccionAgenda";
 import { grupoOcurreEnFecha, textoFrecuenciaGrupo } from "@/lib/grupos";
-import { etiquetaRecuperacion, motivoMovimientoClase } from "@/lib/movimientosClase";
+import { motivoMovimientoClase } from "@/lib/movimientosClase";
 import { AgendaAlumno, Alumno, Feriado, Grupo, Modelo, TipoMovimientoClase } from "@/models";
 
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-const SIN_NECESIDADES = "No necesita";
 const iso = (year: number, month: number, day: number) =>
   `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 const proximaFechaDelDia = (dia: number, desde: string) => {
@@ -389,145 +389,30 @@ export default function CalendarioScreen() {
         />
       )}
 
-      <FormModal
+      <DetalleDiaModal
         visible={!!selectedDate && !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible}
-        title={detailGroupId ? "Detalle del grupo" : selectedDate ? `Día ${selectedDate.slice(8, 10)}` : "Organizar día"}
-        onClose={() => { setSelectedDate(null); setEditAgenda(null); }}
-        onSave={() => { setSelectedDate(null); setEditAgenda(null); }}
-      >
-        <View style={[
-          styles.daySummary,
-          selectedHoliday && {
-            backgroundColor: selectedHoliday.tipo === "compromiso" ? colors.claySoft : "#FFF0EF",
-          },
-        ]}> 
-          <Text style={styles.daySummaryTitle}>{selectedDate}</Text>
-          <Text style={styles.daySummaryText}>
-            {selectedHoliday
-              ? `${selectedHoliday.motivo}${selectedHoliday.fecha_recuperacion
-                  ? ` · Recuperan el ${selectedHoliday.fecha_recuperacion.slice(8, 10)}/${selectedHoliday.fecha_recuperacion.slice(5, 7)}/${selectedHoliday.fecha_recuperacion.slice(0, 4)}`
-                  : ""}`
-              : `${selectedEntries.length} persona${selectedEntries.length === 1 ? "" : "s"} programada${selectedEntries.length === 1 ? "" : "s"}`}
-          </Text>
-          <Pressable
-            onPress={() => {
-              if (!selectedDate) return;
-              const fecha = selectedDate;
-              setSelectedDate(null);
-              setDetailGroupId(null);
-              abrirNuevoGrupo(fecha);
-            }}
-            style={styles.addGroupInSummary}
-          >
-            <Ionicons name="add" size={20} color="white" />
-            <Text style={styles.addGroupInSummaryText}>Crear grupo</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sectionTitle}>PERSONAS DE ESTE DÍA</Text>
-        {!selectedEntries.length && <Text style={styles.emptyText}>Todavía no hay personas cargadas para este día.</Text>}
-        {selectedEntries.map(item => (
-          <View key={item.id} style={[styles.personRow, { borderLeftColor: item.grupo_color }]}>
-            <View style={styles.personHeader}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.personName}>{item.alumno_nombre}</Text>
-                <Text style={styles.personMeta}>
-                  {item.hora} · {item.grupo_nombre}
-                  {item.feriado_origen
-                    ? ` · ${etiquetaRecuperacion(item.motivo_movimiento, item.feriado_origen)}`
-                    : item.tipo === "recuperacion" ? " · Recuperación" : ""}
-                </Text>
-                <Text style={[styles.personModel, !item.modelo_id && item.necesidades !== SIN_NECESIDADES && { color: colors.warning }]}>
-                  {item.necesidades === SIN_NECESIDADES
-                    ? "No necesita modelo"
-                    : item.modelo_nombre || "Falta preguntarle qué modelo quiere"}
-                </Text>
-                {!!item.necesidades && (
-                  <Text style={styles.personNeeds}>
-                    {item.necesidades === SIN_NECESIDADES
-                      ? "No necesita molde ni materiales"
-                      : `Necesita: ${item.necesidades}`}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.personActions}>
-                <Pressable onPress={() => abrirEdicionModelo(item)} style={styles.modelEditButton}>
-                  <Ionicons name="color-palette-outline" size={15} color={colors.primary} />
-                  <Text style={styles.modelEditText}>Modelo</Text>
-                </Pressable>
-                <Pressable onPress={() => quitar(item)} style={styles.deleteButton}>
-                  <Ionicons name="close" size={15} color={colors.danger} />
-                  <Text style={styles.deleteButtonText}>Quitar</Text>
-                </Pressable>
-              </View>
-            </View>
-            <Text style={styles.attendanceLabel}>¿Viene a esta clase?</Text>
-            <View style={styles.attendanceChoices}>
-              <Pressable
-                disabled={guardandoAsistencia === item.id}
-                onPress={() => cambiarAsistencia(item, true)}
-                style={[
-                  styles.attendanceChoice,
-                  item.estado !== "ausente" && styles.attendanceYes,
-                ]}
-              >
-                <Ionicons
-                  name={item.estado !== "ausente" ? "radio-button-on" : "radio-button-off"}
-                  size={17}
-                  color={item.estado !== "ausente" ? colors.success : colors.muted}
-                />
-                <Text style={[styles.attendanceText, item.estado !== "ausente" && { color: colors.success }]}>Sí, viene</Text>
-              </Pressable>
-              <Pressable
-                disabled={guardandoAsistencia === item.id}
-                onPress={() => cambiarAsistencia(item, false)}
-                style={[
-                  styles.attendanceChoice,
-                  item.estado === "ausente" && styles.attendanceNo,
-                ]}
-              >
-                <Ionicons
-                  name={item.estado === "ausente" ? "radio-button-on" : "radio-button-off"}
-                  size={17}
-                  color={item.estado === "ausente" ? colors.danger : colors.muted}
-                />
-                <Text style={[styles.attendanceText, item.estado === "ausente" && { color: colors.danger }]}>No viene</Text>
-              </Pressable>
-            </View>
-          </View>
-        ))}
-        {!!selectedDate && selectedDate >= hoyTexto && <>
-          <Text style={styles.sectionTitle}>AGREGAR UNA PERSONA</Text>
-          <Pressable onPress={() => setSelectorAlumnoVisible(true)} style={styles.personPickerButton}>
-            <View style={styles.personPickerIcon}>
-              <Ionicons name="person-add-outline" size={20} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.personPickerTitle}>Elegir persona</Text>
-              <Text style={styles.personPickerText}>Buscar, elegir cómo ocupa el lugar y confirmar</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={19} color={colors.primary} />
-          </Pressable>
-        </>}
-
-        <Text style={styles.sectionTitle}>MOVER ESTA CLASE</Text>
-        {!selectedHoliday ? (
-          <Pressable onPress={elegirMotivoMovimiento} style={styles.datePickerButton}>
-            <View style={styles.datePickerIcon}>
-              <Ionicons name="calendar-outline" size={20} color={colors.clay} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.datePickerTitle}>Mover esta clase</Text>
-              <Text style={styles.datePickerText}>Elegir motivo y fecha de recuperación</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={19} color={colors.clay} />
-          </Pressable>
-        ) : (
-          <Pressable onPress={confirmarDesmarcarFeriado} style={styles.holidayButton}>
-            <Text style={styles.holidayButtonText}>Quitar movimiento y volver atrás</Text>
-          </Pressable>
-        )}
-      </FormModal>
+        fecha={selectedDate}
+        esDetalleGrupo={!!detailGroupId}
+        personas={selectedEntries}
+        feriado={selectedHoliday}
+        hoy={hoyTexto}
+        guardandoAsistencia={guardandoAsistencia}
+        onClose={() => {
+          setSelectedDate(null);
+          setEditAgenda(null);
+        }}
+        onCrearGrupo={fecha => {
+          setSelectedDate(null);
+          setDetailGroupId(null);
+          abrirNuevoGrupo(fecha);
+        }}
+        onEditarModelo={abrirEdicionModelo}
+        onQuitar={quitar}
+        onCambiarAsistencia={cambiarAsistencia}
+        onAgregarPersona={() => setSelectorAlumnoVisible(true)}
+        onMoverClase={elegirMotivoMovimiento}
+        onDeshacerMovimiento={confirmarDesmarcarFeriado}
+      />
 
       <AgregarPersonaModal
         visible={selectorAlumnoVisible}
@@ -575,40 +460,6 @@ const styles = StyleSheet.create({
   modelsIcon: { width: 43, height: 43, borderRadius: 13, backgroundColor: colors.claySoft, alignItems: "center", justifyContent: "center" },
   modelsTitle: { color: colors.ink, fontSize: 14, fontWeight: "900" },
   modelsText: { color: colors.muted, fontSize: 10, marginTop: 3 },
-  daySummary: { padding: 15, borderRadius: 14, backgroundColor: colors.primarySoft },
-  daySummaryTitle: { color: colors.ink, fontSize: 19, fontWeight: "900" },
-  daySummaryText: { color: colors.muted, fontSize: 12, marginTop: 4 },
-  addGroupInSummary: { minHeight: 42, marginTop: 14, borderRadius: 11, backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
-  addGroupInSummaryText: { color: "white", fontSize: 12, fontWeight: "900" },
-  sectionTitle: { color: colors.muted, fontSize: 11, fontWeight: "900", letterSpacing: .8, marginTop: 4 },
-  emptyText: { color: colors.muted, fontSize: 13, fontStyle: "italic" },
-  personRow: { minHeight: 58, gap: 9, padding: 11, borderRadius: 12, borderLeftWidth: 5, backgroundColor: "white", borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border },
-  personHeader: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
-  personActions: { alignItems: "stretch", gap: 6 },
-  personName: { color: colors.ink, fontSize: 14, fontWeight: "900" },
-  personMeta: { color: colors.muted, fontSize: 10, marginTop: 3 },
-  personModel: { color: colors.primary, fontSize: 11, fontWeight: "900", marginTop: 5 },
-  personNeeds: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 2 },
-  modelEditButton: { minHeight: 34, paddingHorizontal: 8, borderRadius: 9, backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 4 },
-  modelEditText: { color: colors.primary, fontSize: 9, fontWeight: "900" },
-  deleteButton: { minHeight: 34, paddingHorizontal: 8, borderRadius: 9, backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4 },
-  deleteButtonText: { color: colors.danger, fontSize: 9, fontWeight: "900" },
-  attendanceLabel: { color: colors.muted, fontSize: 11, fontWeight: "800", marginTop: 2 },
-  attendanceChoices: { flexDirection: "row", gap: 7 },
-  attendanceChoice: { flex: 1, minHeight: 39, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: "white", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
-  attendanceYes: { borderColor: colors.success, backgroundColor: `${colors.success}12` },
-  attendanceNo: { borderColor: colors.danger, backgroundColor: `${colors.danger}10` },
-  attendanceText: { color: colors.muted, fontSize: 11, fontWeight: "900" },
-  personPickerButton: { minHeight: 66, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: "#BCD2CA", backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 10 },
-  personPickerIcon: { width: 39, height: 39, borderRadius: 12, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
-  personPickerTitle: { color: colors.primary, fontSize: 14, fontWeight: "900" },
-  personPickerText: { color: colors.muted, fontSize: 10, marginTop: 3 },
-  datePickerButton: { minHeight: 66, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: "#E5C8B8", backgroundColor: colors.claySoft, flexDirection: "row", alignItems: "center", gap: 10 },
-  datePickerIcon: { width: 39, height: 39, borderRadius: 12, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
-  datePickerTitle: { color: colors.clay, fontSize: 14, fontWeight: "900" },
-  datePickerText: { color: colors.muted, fontSize: 10, marginTop: 3 },
-  holidayButton: { minHeight: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF0EF", borderWidth: 1, borderColor: "#F0C5C0" },
-  holidayButtonText: { color: colors.danger, fontSize: 13, fontWeight: "900" },
   groupCard: { minHeight: 76, padding: 13, borderRadius: 15, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 11 },
   groupColor: { width: 6, alignSelf: "stretch", borderRadius: 4 },
   groupName: { color: colors.ink, fontSize: 15, fontWeight: "900" },

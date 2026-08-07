@@ -79,4 +79,8 @@ No se generó ni publicó una versión de producción como parte de este cambio.
 - El formulario de creación y edición de grupos se separó en
   `components/calendario/GrupoFormModal.tsx`, junto con sus campos, selectores,
   validaciones, recordatorios y confirmación de eliminación.
+- El detalle de cada día se separó en
+  `components/calendario/DetalleDiaModal.tsx`. Allí se presentan las personas,
+  asistencia, modelos y acciones de agregar, quitar o mover, mientras la
+  pantalla mantiene las operaciones y el acceso a datos.
 - No se modificaron textos, colores, cálculos de cupos ni comportamiento visible.
