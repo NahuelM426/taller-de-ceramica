@@ -35,9 +35,9 @@ async function prepararBase() {
   return db;
 }
 
-beforeEach(prepararBase);
-
 describe("ausencias y reversión", () => {
+  beforeEach(prepararBase);
+
   test("una ausencia suma un solo pendiente y puede revertirse", async () => {
     const db = await databasePromise;
     await db.runAsync(
@@ -80,6 +80,8 @@ describe("ausencias y reversión", () => {
 });
 
 describe("pendientes y recuperaciones", () => {
+  beforeEach(prepararBase);
+
   test("asignar y quitar una recuperación descuenta y devuelve el pendiente", async () => {
     const db = await databasePromise;
     await db.runAsync("UPDATE alumnos SET pendientes = 2 WHERE id = 1");
