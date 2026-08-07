@@ -96,3 +96,11 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   sola vez después de abrir el modelo de esa persona.
 - Mover una clase, marcar un feriado, deshacerlo o volver al calendario ya no
   vuelve a abrir automáticamente el modelo del último contacto consultado.
+
+### Preparación de la versión 1.0.3
+
+- La versión pública de la aplicación se actualizó a `1.0.3` y el código de
+  compilación Android a `4`, listo para generar un nuevo AAB en Google Play.
+- TypeScript, lint y las 28 pruebas automatizadas fueron verificados antes de
+  preparar la compilación.
+- En esta etapa no se generó ni publicó el AAB.
