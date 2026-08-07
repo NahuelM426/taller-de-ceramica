@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "Taller de Cerámica",
+    "slug": "taller-de-ceramica",
+    "version": "1.0.2",
+    "orientation": "portrait",
+    "icon": "./assets/mundo-ceramica-logo.png",
+    "scheme": "tallerdeceramica",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nahuel.tallerdeceramica"
+    },
+    "android": {
+      "package": "com.nahuel.tallerdeceramica",
+      "versionCode": 3,
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/mundo-ceramica-logo.png",
+        "backgroundColor": "#111111"
+      },
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ],
+      "blockedPermissions": [
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Permitir a Taller de Cerámica acceder a tus contactos para cargar alumnos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir a Taller de Cerámica elegir fotos para mostrar los modelos disponibles.",
+          "cameraPermission": "Permitir a Taller de Cerámica usar la cámara para fotografiar los modelos.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a8e54cbd-3bac-4b50-8bcc-07950ee7b063"
+      }
+    },
+    "owner": "nahuel4266"
+  }
+}

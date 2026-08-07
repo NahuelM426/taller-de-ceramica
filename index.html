@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#2f5d50" />
+    <title>Barro & Jardín · Gestión del taller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#" aria-label="Inicio">
+          <span class="brand-mark">B</span>
+          <span><strong>Barro & Jardín</strong><small>Taller de cerámica</small></span>
+        </a>
+
+        <nav class="main-nav" aria-label="Navegación principal">
+          <button class="nav-item active" data-view="agenda"><span>⌂</span> Agenda</button>
+          <button class="nav-item" data-view="alumnos"><span>♙</span> Alumnos <b id="studentCountBadge">12</b></button>
+          <button class="nav-item" data-view="grupos"><span>◉</span> Grupos</button>
+          <button class="nav-item" data-view="moldes"><span>◇</span> Moldes</button>
+          <button class="nav-item" data-view="pendientes"><span>↻</span> Pendientes <b id="debtCountBadge">3</b></button>
+        </nav>
+
+        <div class="sidebar-note">
+          <span class="leaf">❧</span>
+          <p>Todo tu taller,<br />en un solo lugar.</p>
+          <small>Los cambios quedan guardados automáticamente.</small>
+        </div>
+
+        <div class="profile">
+          <div class="avatar">MC</div>
+          <div><strong>Marina Costa</strong><small>Profesora</small></div>
+          <button aria-label="Opciones">•••</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <button class="mobile-menu" id="mobileMenu" aria-label="Abrir menú">☰</button>
+          <div>
+            <p class="eyebrow" id="eyebrow">Jueves, 30 de julio</p>
+            <h1 id="pageTitle">Hola, Marina <span>✦</span></h1>
+          </div>
+          <div class="top-actions">
+            <button class="icon-button" aria-label="Notificaciones">♢<i></i></button>
+            <button class="primary-button" id="openStudentModal"><span>＋</span> Nueva persona</button>
+          </div>
+        </header>
+
+        <section class="view active" id="agendaView">
+          <div class="stats-grid">
+            <article class="stat-card">
+              <span class="stat-icon terracotta">♙</span>
+              <div><small>Alumnos activos</small><strong id="activeStudents">12</strong><p><em>↑ 2</em> este mes</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon green">▣</span>
+              <div><small>Clases esta semana</small><strong>5</strong><p>3 grupos regulares</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon amber">↻</span>
+              <div><small>Clases pendientes</small><strong id="pendingClasses">3</strong><p>de 3 alumnos</p></div>
+            </article>
+            <article class="stat-card">
+              <span class="stat-icon lilac">◇</span>
+              <div><small>Moldes en uso</small><strong id="moldsInUse">4</strong><p>de 9 disponibles</p></div>
+            </article>
+          </div>
+
+          <div class="content-grid">
+            <article class="panel calendar-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="section-kicker">Agenda del taller</p>
+                  <h2 id="calendarTitle">Julio 2026</h2>
+                </div>
+                <div class="calendar-controls">
+                  <button id="prevMonth" aria-label="Mes anterior">‹</button>
+                  <button id="todayButton">Hoy</button>
+                  <button id="nextMonth" aria-label="Mes siguiente">›</button>
+                </div>
+              </div>
+              <div class="calendar-weekdays">
+                <span>LUN</span><span>MAR</span><span>MIÉ</span><span>JUE</span><span>VIE</span><span>SÁB</span><span>DOM</span>
+              </div>
+              <div class="calendar-grid" id="calendarGrid"></div>
+              <div class="legend">
+                <span><i class="dot green-dot"></i> Grupo regular</span>
+                <span><i class="dot peach-dot"></i> Recuperación</span>
+                <span><i class="dot gray-dot"></i> Sin cupos</span>
+              </div>
+            </article>
+
+            <aside class="right-column">
+              <article class="panel next-class">
+                <div class="panel-header compact">
+                  <div><p class="section-kicker">Próxima clase</p><h2>Viernes · 18:00</h2></div>
+                  <span class="status-pill">Mañana</span>
+                </div>
+                <div class="class-summary">
+                  <div>
+                    <strong>Grupo Viernes Tarde</strong>
+                    <p><span>♙</span> <b id="fridayAttendance">4</b> de 6 lugares</p>
+                  </div>
+                  <span class="capacity">2 cupos</span>
+                </div>
+                <div class="attendee-list" id="attendeeList"></div>
+                <button class="secondary-button full" id="openAttendance">Ver asistencia y detalles <span>→</span></button>
+              </article>
+
+              <article class="panel quick-recovery">
+                <div class="recovery-icon">↻</div>
+                <div><p class="section-kicker">Hay lugar mañana</p><h3>Podés ofrecer una recuperación</h3><p id="recoverySuggestion">3 personas tienen clases pendientes.</p></div>
+                <button class="text-button" data-view-link="pendientes">Ver opciones →</button>
+              </article>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="alumnosView">
+          <div class="section-heading">
+            <div><p class="section-kicker">Tu comunidad</p><h2>Alumnos</h2><p>Personas, frecuencia y moldes elegidos.</p></div>
+            <button class="primary-button" id="openStudentModal2">＋ Nueva persona</button>
+          </div>
+          <div class="toolbar">
+            <label class="search">⌕ <input id="studentSearch" type="search" placeholder="Buscar por nombre..." /></label>
+            <div class="filter-pills"><button class="active">Todos</button><button>Semanal</button><button>Quincenal</button></div>
+          </div>
+          <div class="table-card">
+            <table>
+              <thead><tr><th>Persona</th><th>Grupo</th><th>Frecuencia</th><th>Molde</th><th>Pendientes</th><th></th></tr></thead>
+              <tbody id="studentsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="gruposView">
+          <div class="section-heading">
+            <div><p class="section-kicker">Horarios fijos</p><h2>Grupos</h2><p>Organizá los cupos semanales del taller.</p></div>
+            <button class="primary-button" id="newGroupButton">＋ Nuevo grupo</button>
+          </div>
+          <div class="group-grid" id="groupGrid"></div>
+        </section>
+
+        <section class="view" id="moldesView">
+          <div class="section-heading">
+            <div><p class="section-kicker">Biblioteca del taller</p><h2>Moldes</h2><p>Inventario y asignaciones actuales.</p></div>
+            <button class="primary-button" id="newMoldButton">＋ Cargar molde</button>
+          </div>
+          <div class="mold-grid" id="moldGrid"></div>
+        </section>
+
+        <section class="view" id="pendientesView">
+          <div class="section-heading">
+            <div><p class="section-kicker">Clases a favor</p><h2>Pendientes</h2><p>Ausencias avisadas que se pueden recuperar en un grupo con cupo.</p></div>
+          </div>
+          <div class="recovery-layout">
+            <div class="table-card">
+              <div class="table-title"><h3>Personas con clases pendientes</h3><span id="pendingTotalLabel">3 en total</span></div>
+              <div id="pendingList"></div>
+            </div>
+            <article class="panel available-slots">
+              <p class="section-kicker">Próximos cupos</p>
+              <h3>Clases disponibles</h3>
+              <div class="slot"><span><b>Vie 31</b><small>18:00 · 2 cupos</small></span><button data-slot="Viernes 31 · 18:00">Ofrecer</button></div>
+              <div class="slot"><span><b>Mar 4</b><small>10:00 · 1 cupo</small></span><button data-slot="Martes 4 · 10:00">Ofrecer</button></div>
+              <div class="slot"><span><b>Mié 5</b><small>17:00 · 2 cupos</small></span><button data-slot="Miércoles 5 · 17:00">Ofrecer</button></div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="studentModal">
+      <form method="dialog" id="studentForm">
+        <div class="modal-header">
+          <div><p class="section-kicker">Nueva inscripción</p><h2>Cargar persona</h2></div>
+          <button value="cancel" class="close-button" aria-label="Cerrar">×</button>
+        </div>
+        <div class="form-grid">
+          <label class="wide">Nombre y apellido<input name="name" required placeholder="Ej. Julia Fernández" /></label>
+          <label>Teléfono<input name="phone" placeholder="11 5555 5555" /></label>
+          <label>Frecuencia<select name="frequency"><option>Semanal</option><option>Quincenal</option></select></label>
+          <label class="wide">Grupo<select name="group" id="studentGroupSelect"></select></label>
+          <label class="wide check-row"><input type="checkbox" name="wantsMold" id="wantsMold" /> Quiere trabajar con un molde</label>
+          <label class="wide hidden" id="moldSelectLabel">Molde<select name="mold" id="studentMoldSelect"></select></label>
+        </div>
+        <div class="modal-actions"><button value="cancel" class="secondary-button">Cancelar</button><button value="default" class="primary-button" id="saveStudent">Guardar persona</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="attendanceModal">
+      <form method="dialog">
+        <div class="modal-header">
+          <div><p class="section-kicker">Viernes · 18:00</p><h2>Tomar asistencia</h2></div>
+          <button value="cancel" class="close-button">×</button>
+        </div>
+        <p class="modal-description">Si alguien avisa que no viene, la clase queda automáticamente a su favor.</p>
+        <div id="attendanceRows" class="attendance-rows"></div>
+        <div class="modal-actions"><button value="default" class="primary-button">Listo</button></div>
+      </form>
+    </dialog>
+
+    <dialog id="simpleModal">
+      <form method="dialog" id="simpleForm">
+        <div class="modal-header">
+          <div><p class="section-kicker" id="simpleKicker">Nuevo</p><h2 id="simpleTitle">Cargar</h2></div>
+          <button value="cancel" class="close-button">×</button>
+        </div>
+        <div class="form-grid" id="simpleFields"></div>
+        <div class="modal-actions"><button value="cancel" class="secondary-button">Cancelar</button><button value="default" class="primary-button" id="saveSimple">Guardar</button></div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"><span>✓</span><p></p></div>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+.expo-export-*/
+.eas-build-staging*/
+.git/
+demo.png
+npm-debug.log*
+*.keystore
+*.jks
+*.apk
+*.aab
+docs/
+play-store/
