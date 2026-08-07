@@ -2,6 +2,10 @@ import { Alumno, AlumnoInput, Grupo } from "@/models";
 import { databasePromise } from "@/database/connection";
 import { fechaDentroDe, fechaLocal } from "@/database/dates";
 import { generarAgendaHasta } from "@/database/agendaMaintenance";
+import {
+  ajustarSaldoPendientes,
+  cancelarPendientesPorAusenciasFuturas,
+} from "@/database/pendientes";
 import { grupoOcurreEnFecha } from "@/lib/grupos";
 
 const SELECT_ALUMNO = `
@@ -77,14 +81,11 @@ export const alumnoRepository = {
         cambioAgenda ? 1 : 0, fechaLocal(), id
       );
       if (!cambioAgenda) return;
-      const ausencias = await db.getFirstAsync<{ total: number }>(
-        `SELECT COUNT(*) AS total FROM agenda_alumnos
-         WHERE alumno_id = ? AND tipo = 'regular' AND fecha >= ? AND estado = 'ausente'`,
-        id, fechaLocal()
-      );
-      await db.runAsync(
-        "UPDATE alumnos SET pendientes = MAX(0, pendientes - ?) WHERE id = ?",
-        ausencias?.total || 0, id
+      await cancelarPendientesPorAusenciasFuturas(
+        db,
+        id,
+        fechaLocal(),
+        "cambio_grupo_edicion"
       );
       await db.runAsync(
         "DELETE FROM agenda_alumnos WHERE alumno_id = ? AND tipo = 'regular' AND fecha >= ?",
@@ -110,10 +111,14 @@ export const alumnoRepository = {
   async actualizarPendientes(id: number, cantidad: number) {
     const db = await databasePromise;
     const total = Math.max(0, Math.floor(cantidad));
-    await db.runAsync(
-      "UPDATE alumnos SET pendientes = ? WHERE id = ? AND activo = 1",
-      total, id
-    );
+    await db.withTransactionAsync(async () => {
+      const alumno = await db.getFirstAsync<{ id: number }>(
+        "SELECT id FROM alumnos WHERE id = ? AND activo = 1",
+        id
+      );
+      if (!alumno) throw new Error("La persona ya no está disponible");
+      await ajustarSaldoPendientes(db, id, total);
+    });
   },
 
   async fijarEnGrupo(id: number, grupoId: number, fechaInicio: string) {
@@ -132,20 +137,12 @@ export const alumnoRepository = {
     const grupoAnteriorId = alumno.sin_grupo ? null : alumno.grupo_id;
     await db.withTransactionAsync(async () => {
       if (!yaPertenece && grupoAnteriorId) {
-        const ausencias = await db.getFirstAsync<{ total: number }>(
-          `SELECT COUNT(*) AS total FROM agenda_alumnos
-           WHERE alumno_id = ? AND grupo_id = ? AND tipo = 'regular'
-             AND fecha >= ? AND estado = 'ausente'`,
-          id, grupoAnteriorId, desde
-        );
-        await db.runAsync(
-          "UPDATE alumnos SET pendientes = MAX(0, pendientes - ?) WHERE id = ?",
-          ausencias?.total || 0, id
-        );
-        await db.runAsync(
-          `DELETE FROM clases WHERE alumno_id = ? AND grupo_id = ?
-           AND fecha >= ? AND estado = 'ausente'`,
-          id, grupoAnteriorId, desde
+        await cancelarPendientesPorAusenciasFuturas(
+          db,
+          id,
+          desde,
+          "cambio_grupo_fijado",
+          grupoAnteriorId
         );
       }
 

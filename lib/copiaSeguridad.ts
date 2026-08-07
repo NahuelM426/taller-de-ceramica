@@ -9,7 +9,7 @@ type ValorSql = string | number | null;
 type FilaCopia = Record<string, ValorSql>;
 
 const FORMATO = "taller-de-ceramica";
-const VERSION_FORMATO = 1;
+const VERSION_FORMATO = 2;
 const ARCHIVO_EMERGENCIA = "taller-ceramica-antes-de-restaurar.json";
 const LIMITE_ARCHIVO = 100 * 1024 * 1024;
 
@@ -43,6 +43,13 @@ const tablas = [
       "id", "alumno_id", "grupo_id", "fecha", "tipo", "estado", "modelo_id",
       "necesidades", "cubre_agenda_id", "origen_agenda_id", "feriado_origen",
       "feriado_tipo_origen", "motivo_movimiento",
+    ],
+  },
+  {
+    nombre: "movimientos_pendientes",
+    columnas: [
+      "id", "alumno_id", "agenda_id", "delta", "tipo", "clave",
+      "revierte_movimiento_id", "fecha", "creado_en",
     ],
   },
   { nombre: "feriados", columnas: ["fecha", "motivo", "fecha_recuperacion", "tipo"] },
@@ -97,7 +104,8 @@ function validarCopia(valor: unknown): CopiaSeguridad {
   if (candidata.formato !== FORMATO) {
     throw new Error("El archivo no pertenece a Taller de Cerámica.");
   }
-  if (candidata.versionFormato !== VERSION_FORMATO) {
+  const versionRecibida = candidata.versionFormato;
+  if (versionRecibida !== 1 && versionRecibida !== VERSION_FORMATO) {
     throw new Error("La versión de esta copia todavía no es compatible.");
   }
   if (typeof candidata.creadaEn !== "string" || !candidata.tablas ||
@@ -105,11 +113,16 @@ function validarCopia(valor: unknown): CopiaSeguridad {
     throw new Error("La copia está incompleta o dañada.");
   }
 
+  const creadaEn = candidata.creadaEn as string;
   const tablasRecibidas = candidata.tablas as Record<string, unknown>;
   const tablasLimpias = {} as Record<NombreTabla, FilaCopia[]>;
   let filasTotales = 0;
   for (const tabla of tablas) {
-    const filas = tablasRecibidas[tabla.nombre];
+    let filas = tablasRecibidas[tabla.nombre];
+    if (!Array.isArray(filas) && versionRecibida === 1 &&
+        tabla.nombre === "movimientos_pendientes") {
+      filas = [];
+    }
     if (!Array.isArray(filas)) throw new Error(`Falta la información de ${tabla.nombre}.`);
     filasTotales += filas.length;
     if (filasTotales > 100_000) throw new Error("La copia contiene demasiados registros.");
@@ -127,6 +140,44 @@ function validarCopia(valor: unknown): CopiaSeguridad {
       }
       return limpio;
     });
+  }
+
+  if (versionRecibida === 1) {
+    tablasLimpias.movimientos_pendientes = tablasLimpias.alumnos
+      .filter(alumno => typeof alumno.pendientes === "number" && alumno.pendientes > 0)
+      .map((alumno, indice) => {
+        const alumnoId = alumno.id as number;
+        const pendientes = alumno.pendientes as number;
+        return {
+          id: null,
+          alumno_id: alumnoId,
+          agenda_id: null,
+          delta: pendientes,
+          tipo: "saldo_inicial",
+          clave: `saldo_restaurado_v1:alumno:${alumnoId}:${indice}`,
+          revierte_movimiento_id: null,
+          fecha: creadaEn.slice(0, 10),
+          creado_en: creadaEn,
+        };
+      });
+  }
+
+  const saldos = new Map<number, number>();
+  for (const movimiento of tablasLimpias.movimientos_pendientes) {
+    if (typeof movimiento.alumno_id !== "number" ||
+        typeof movimiento.delta !== "number") {
+      throw new Error("La copia tiene movimientos de pendientes inválidos.");
+    }
+    saldos.set(
+      movimiento.alumno_id,
+      (saldos.get(movimiento.alumno_id) || 0) + movimiento.delta
+    );
+  }
+  for (const alumno of tablasLimpias.alumnos) {
+    if (typeof alumno.id !== "number" || typeof alumno.pendientes !== "number" ||
+        alumno.pendientes !== (saldos.get(alumno.id) || 0)) {
+      throw new Error("La copia tiene saldos de pendientes inconsistentes.");
+    }
   }
 
   return {

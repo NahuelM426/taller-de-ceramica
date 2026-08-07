@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, test } from "node:test";
 
 import { crearEsquema } from "../database/schema";
+import { ajustarSaldoPendientes } from "../database/pendientes";
 import { agendaRepository } from "../repositories/agendaRepository";
 import {
   databasePromise,
@@ -76,6 +77,24 @@ describe("ausencias y reversión", () => {
     assert.equal(alumnoRevertido?.pendientes, 0);
     assert.equal(agendaRevertida?.estado, "programada");
     assert.equal(ausenciasRestantes?.cantidad, 0);
+
+    await agendaRepository.registrarAusencia(1, 2, "2026-08-14");
+    const segundoCiclo = await db.getFirstAsync<{
+      pendientes: number; movimientos: number;
+    }>(`
+      SELECT a.pendientes,
+        (SELECT COUNT(*) FROM movimientos_pendientes
+         WHERE agenda_id = 10 AND tipo = 'ausencia') AS movimientos
+      FROM alumnos a WHERE a.id = 1
+    `);
+    assert.equal(segundoCiclo?.pendientes, 1);
+    assert.equal(segundoCiclo?.movimientos, 2);
+
+    await agendaRepository.revertirAusencia(1, 2, "2026-08-14");
+    const segundoCicloRevertido = await db.getFirstAsync<{ pendientes: number }>(
+      "SELECT pendientes FROM alumnos WHERE id = 1"
+    );
+    assert.equal(segundoCicloRevertido?.pendientes, 0);
   });
 });
 
@@ -84,7 +103,7 @@ describe("pendientes y recuperaciones", () => {
 
   test("asignar y quitar una recuperación descuenta y devuelve el pendiente", async () => {
     const db = await databasePromise;
-    await db.runAsync("UPDATE alumnos SET pendientes = 2 WHERE id = 1");
+    await ajustarSaldoPendientes(db, 1, 2, "test:saldo:recuperacion");
     await db.runAsync(
       `INSERT INTO agenda_alumnos
        (id,alumno_id,grupo_id,fecha,tipo,estado)
@@ -120,6 +139,24 @@ describe("pendientes y recuperaciones", () => {
     assert.equal(recuperacionQuitada?.estado, "cancelada");
     assert.equal(pendienteDevuelto?.pendientes, 2);
     assert.equal(clasesRecuperacion?.cantidad, 0);
+
+    await agendaRepository.asignarRecuperacion(1, 1, "2026-08-07");
+    const segundoUso = await db.getFirstAsync<{
+      pendientes: number; movimientos: number;
+    }>(`
+      SELECT a.pendientes,
+        (SELECT COUNT(*) FROM movimientos_pendientes
+         WHERE agenda_id = ? AND tipo = 'recuperacion') AS movimientos
+      FROM alumnos a WHERE a.id = 1
+    `, recuperacion.id);
+    assert.equal(segundoUso?.pendientes, 1);
+    assert.equal(segundoUso?.movimientos, 2);
+
+    await agendaRepository.quitar(recuperacion.id);
+    const segundoUsoRevertido = await db.getFirstAsync<{ pendientes: number }>(
+      "SELECT pendientes FROM alumnos WHERE id = 1"
+    );
+    assert.equal(segundoUsoRevertido?.pendientes, 2);
   });
 
   test("cambiar una clase para cubrir no crea un pendiente", async () => {

@@ -2,6 +2,10 @@ import { Grupo, GrupoInput } from "@/models";
 import { rearmarAgendaRegularGrupo } from "@/database/agendaMaintenance";
 import { databasePromise } from "@/database/connection";
 import { fechaLocal } from "@/database/dates";
+import {
+  cancelarPendientesPorAusenciasFuturas,
+  revertirMovimientoAgenda,
+} from "@/database/pendientes";
 
 export const grupoRepository = {
   async listar() {
@@ -45,18 +49,36 @@ export const grupoRepository = {
     const db = await databasePromise;
     const desde = fechaLocal();
     await db.withTransactionAsync(async () => {
-      const recuperaciones = await db.getAllAsync<{ alumno_id: number; cantidad: number }>(`
-        SELECT alumno_id, COUNT(*) AS cantidad
+      const alumnos = await db.getAllAsync<{ id: number }>(`
+        SELECT id FROM alumnos WHERE grupo_id = ? AND activo = 1
+      `, id);
+      for (const alumno of alumnos) {
+        await cancelarPendientesPorAusenciasFuturas(
+          db,
+          alumno.id,
+          desde,
+          "eliminacion_grupo",
+          id
+        );
+      }
+      const recuperaciones = await db.getAllAsync<{
+        id: number; alumno_id: number; fecha: string;
+      }>(`
+        SELECT id, alumno_id, fecha
         FROM agenda_alumnos
         WHERE grupo_id = ? AND fecha >= ?
           AND tipo = 'recuperacion' AND estado = 'programada'
-        GROUP BY alumno_id
+        ORDER BY id
       `, id, desde);
       for (const recuperacion of recuperaciones) {
-        await db.runAsync(
-          "UPDATE alumnos SET pendientes = pendientes + ? WHERE id = ?",
-          recuperacion.cantidad, recuperacion.alumno_id
-        );
+        await revertirMovimientoAgenda(db, {
+          alumnoId: recuperacion.alumno_id,
+          agendaId: recuperacion.id,
+          tipoOriginal: "recuperacion",
+          deltaLegacy: 1,
+          contextoLegacy: "eliminacion_grupo",
+          fecha: recuperacion.fecha,
+        });
       }
       await db.runAsync(
         "DELETE FROM clases WHERE grupo_id = ? AND fecha >= ? AND estado = 'recuperacion'",

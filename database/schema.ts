@@ -48,6 +48,22 @@ export async function crearEsquema(db: Database) {
       FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
       FOREIGN KEY (grupo_id) REFERENCES grupos(id)
     );
+    CREATE TABLE IF NOT EXISTS movimientos_pendientes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alumno_id INTEGER NOT NULL,
+      agenda_id INTEGER,
+      delta INTEGER NOT NULL CHECK(delta != 0),
+      tipo TEXT NOT NULL CHECK(tipo IN (
+        'saldo_inicial','ausencia','recuperacion','ajuste_manual','reversion'
+      )),
+      clave TEXT NOT NULL UNIQUE,
+      revierte_movimiento_id INTEGER UNIQUE,
+      fecha TEXT NOT NULL,
+      creado_en TEXT NOT NULL,
+      FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
+      FOREIGN KEY (agenda_id) REFERENCES agenda_alumnos(id) ON DELETE SET NULL,
+      FOREIGN KEY (revierte_movimiento_id) REFERENCES movimientos_pendientes(id)
+    );
     CREATE TABLE IF NOT EXISTS feriados (
       fecha TEXT PRIMARY KEY, motivo TEXT NOT NULL DEFAULT 'Feriado',
       fecha_recuperacion TEXT,

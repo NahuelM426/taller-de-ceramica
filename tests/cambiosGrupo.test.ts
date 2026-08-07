@@ -3,6 +3,7 @@ import { beforeEach, describe, test } from "node:test";
 
 import { crearEsquema } from "../database/schema";
 import { fechaLocal } from "../database/dates";
+import { ajustarSaldoPendientes } from "../database/pendientes";
 import { calcularLugaresDisponibles } from "../lib/vacantes";
 import type { AgendaAlumno, Grupo } from "../models";
 import { alumnoRepository } from "../repositories/alumnoRepository";
@@ -132,9 +133,10 @@ describe("cambios permanentes de grupo", () => {
     await db.runAsync(
       `INSERT INTO alumnos
        (id,nombre,frecuencia,grupo_id,pendientes,fecha_inicio)
-       VALUES (1,'Ana','semanal',1,2,?)`,
+       VALUES (1,'Ana','semanal',1,0,?)`,
       hoy
     );
+    await ajustarSaldoPendientes(db, 1, 2, "test:saldo:cambio-grupo");
     await db.runAsync(
       `INSERT INTO agenda_alumnos
        (alumno_id,grupo_id,fecha,tipo,estado)

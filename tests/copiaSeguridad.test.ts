@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, test } from "node:test";
 
 import { crearEsquema } from "../database/schema";
+import { ajustarSaldoPendientes } from "../database/pendientes";
 import {
   compartirCopiaSeguridad,
   elegirCopiaSeguridad,
@@ -14,7 +15,7 @@ import {
   reiniciarBasePrueba,
 } from "./helpers/connection";
 import { elegirDocumentoPrueba } from "./helpers/expoDocumentPicker";
-import { reiniciarArchivosPrueba } from "./helpers/expoFileSystem";
+import { File, reiniciarArchivosPrueba } from "./helpers/expoFileSystem";
 import {
   reiniciarCompartidosPrueba,
   ultimoArchivoCompartido,
@@ -34,8 +35,9 @@ async function prepararBase() {
   await db.runAsync(
     `INSERT INTO alumnos
      (id,nombre,telefono,frecuencia,grupo_id,pendientes,fecha_inicio)
-     VALUES (1,'Ana','2474000000','semanal',1,1,'2026-08-07')`
+     VALUES (1,'Ana','2474000000','semanal',1,0,'2026-08-07')`
   );
+  await ajustarSaldoPendientes(db, 1, 1, "test:saldo:respaldo");
   await db.runAsync(
     `INSERT INTO agenda_alumnos
      (id,alumno_id,grupo_id,fecha,tipo,estado,necesidades)
@@ -56,7 +58,8 @@ describe("copia y restauración de datos", () => {
     assert.equal(resumen.grupos, 1);
     assert.equal(resumen.clases, 1);
 
-    await db.runAsync("UPDATE alumnos SET nombre = 'Ana modificada', pendientes = 5 WHERE id = 1");
+    await db.runAsync("UPDATE alumnos SET nombre = 'Ana modificada' WHERE id = 1");
+    await ajustarSaldoPendientes(db, 1, 5, "test:saldo:modificado");
     await db.runAsync(
       `INSERT INTO grupos
        (id,nombre,dia,hora,capacidad,color,frecuencia,fecha_inicio)
@@ -89,5 +92,36 @@ describe("copia y restauración de datos", () => {
     assert.deepEqual(estadoAnterior, { nombre: "Ana modificada", pendientes: 5 });
     assert.equal(grupoRecuperado?.nombre, "Temporal");
     assert.equal(hayCopiaDeEmergencia(), false);
+  });
+
+  test("convierte un respaldo de formato 1 en un saldo inicial", async () => {
+    const db = await databasePromise;
+    await compartirCopiaSeguridad();
+    const uriActual = ultimoArchivoCompartido();
+    assert.ok(uriActual);
+    const contenido = JSON.parse(await new File(uriActual).text()) as {
+      versionFormato: number;
+      tablas: Record<string, unknown>;
+    };
+    contenido.versionFormato = 1;
+    delete contenido.tablas.movimientos_pendientes;
+    const archivoAnterior = new File("memory://cache/respaldo-v1.json");
+    archivoAnterior.create();
+    archivoAnterior.write(JSON.stringify(contenido));
+
+    await ajustarSaldoPendientes(db, 1, 3, "test:saldo:posterior");
+    elegirDocumentoPrueba(archivoAnterior.uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const alumno = await db.getFirstAsync<{ pendientes: number }>(
+      "SELECT pendientes FROM alumnos WHERE id = 1"
+    );
+    const movimiento = await db.getFirstAsync<{ delta: number; tipo: string }>(
+      "SELECT delta,tipo FROM movimientos_pendientes WHERE alumno_id = 1"
+    );
+    assert.equal(alumno?.pendientes, 1);
+    assert.deepEqual(movimiento, { delta: 1, tipo: "saldo_inicial" });
   });
 });

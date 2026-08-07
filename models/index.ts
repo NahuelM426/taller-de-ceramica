@@ -5,4 +5,5 @@ export * from "./Feriado";
 export * from "./Grupo";
 export * from "./Modelo";
 export * from "./Molde";
+export * from "./MovimientoPendiente";
 export * from "./Vacante";

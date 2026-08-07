@@ -1,5 +1,6 @@
 import { AgendaAlumno, Feriado, TipoAgenda, TipoMovimientoClase } from "@/models";
 import { databasePromise } from "@/database/connection";
+import { revertirMovimientoAgenda } from "@/database/pendientes";
 
 export const feriadoRepository = {
   async listar(inicio: string, fin: string) {
@@ -43,11 +44,19 @@ export const feriadoRepository = {
           movida.alumno_id, movida.grupo_id, movida.fecha
         );
         if (ausencia) {
-          await db.runAsync("DELETE FROM clases WHERE id = ?", ausencia.id);
           await db.runAsync(
-            "UPDATE alumnos SET pendientes = MAX(0, pendientes - 1) WHERE id = ?",
-            movida.alumno_id
+            `DELETE FROM clases
+             WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'ausente'`,
+            movida.alumno_id, movida.grupo_id, movida.fecha
           );
+          await revertirMovimientoAgenda(db, {
+            alumnoId: movida.alumno_id,
+            agendaId: movida.id,
+            tipoOriginal: "ausencia",
+            deltaLegacy: -1,
+            contextoLegacy: "reversion_feriado",
+            fecha: movida.fecha,
+          });
         }
 
         const conflicto = await db.getFirstAsync<{

@@ -2,6 +2,7 @@ import { AgendaAlumno, Alumno, Grupo } from "@/models";
 import { databasePromise, Database } from "@/database/connection";
 import { fechaDentroDe, fechaLocal } from "./dates";
 import { grupoOcurreEnFecha } from "@/lib/grupos";
+import { cancelarPendientesPorAusenciasFuturas } from "./pendientes";
 
 async function generarAgendaConDb(
   db: Database,
@@ -49,13 +50,17 @@ export async function rearmarAgendaRegularGrupo(db: Database, grupoId: number) {
     WHERE activo = 1 AND sin_grupo = 0 AND grupo_id = ?
   `, grupoId);
   for (const alumno of alumnos) {
-    const ausencias = await db.getFirstAsync<{ total: number }>(`
-      SELECT COUNT(*) AS total FROM agenda_alumnos
-      WHERE alumno_id = ? AND tipo = 'regular' AND fecha >= ? AND estado = 'ausente'
-    `, alumno.id, desde);
+    await cancelarPendientesPorAusenciasFuturas(
+      db,
+      alumno.id,
+      desde,
+      "rearmado_grupo",
+      grupoId
+    );
     await db.runAsync(
-      "UPDATE alumnos SET pendientes = MAX(0, pendientes - ?), frecuencia = ? WHERE id = ?",
-      ausencias?.total || 0, grupo.frecuencia, alumno.id
+      "UPDATE alumnos SET frecuencia = ? WHERE id = ?",
+      grupo.frecuencia,
+      alumno.id
     );
     await db.runAsync(
       "DELETE FROM agenda_alumnos WHERE alumno_id = ? AND tipo = 'regular' AND fecha >= ?",

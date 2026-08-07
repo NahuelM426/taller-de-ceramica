@@ -1,6 +1,11 @@
 import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
 import { buscarAusenciaSinCubrir } from "@/database/agendaMaintenance";
 import { databasePromise } from "@/database/connection";
+import {
+  registrarMovimientoAgenda,
+  revertirMovimientoAgenda,
+  saldoPendientes,
+} from "@/database/pendientes";
 
 const SELECT_AGENDA = `
   SELECT ag.*, a.nombre AS alumno_nombre,
@@ -33,8 +38,8 @@ export const agendaRepository = {
   async registrarAusencia(alumnoId: number, grupoId: number, fecha: string) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
-      const agenda = await db.getFirstAsync<{ estado: string }>(
-        "SELECT estado FROM agenda_alumnos WHERE alumno_id = ? AND grupo_id = ? AND fecha = ?",
+      const agenda = await db.getFirstAsync<{ id: number; estado: string }>(
+        "SELECT id,estado FROM agenda_alumnos WHERE alumno_id = ? AND grupo_id = ? AND fecha = ?",
         alumnoId, grupoId, fecha
       );
       if (!agenda || agenda.estado === "ausente") return;
@@ -42,46 +47,79 @@ export const agendaRepository = {
         "INSERT INTO clases (alumno_id,grupo_id,fecha,estado) VALUES (?,?,?,'ausente')",
         alumnoId, grupoId, fecha
       );
-      await db.runAsync("UPDATE alumnos SET pendientes = pendientes + 1 WHERE id = ?", alumnoId);
       await db.runAsync(
-        "UPDATE agenda_alumnos SET estado = 'ausente' WHERE alumno_id = ? AND fecha = ?",
-        alumnoId, fecha
+        "UPDATE agenda_alumnos SET estado = 'ausente' WHERE id = ?",
+        agenda.id
       );
+      await registrarMovimientoAgenda(db, {
+        alumnoId,
+        agendaId: agenda.id,
+        delta: 1,
+        tipo: "ausencia",
+        fecha,
+      });
     });
   },
 
   async revertirAusencia(alumnoId: number, grupoId: number, fecha: string) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
+      const agenda = await db.getFirstAsync<{ id: number; estado: string }>(
+        `SELECT id,estado FROM agenda_alumnos
+         WHERE alumno_id = ? AND grupo_id = ? AND fecha = ?`,
+        alumnoId, grupoId, fecha
+      );
+      if (!agenda || agenda.estado !== "ausente") return;
       const ausencia = await db.getFirstAsync<{ id: number }>(
         `SELECT id FROM clases WHERE alumno_id = ? AND grupo_id = ?
          AND fecha = ? AND estado = 'ausente' ORDER BY id DESC LIMIT 1`,
         alumnoId, grupoId, fecha
       );
+      const movimiento = await db.getFirstAsync<{ id: number }>(
+        `SELECT id FROM movimientos_pendientes
+         WHERE agenda_id = ? AND tipo = 'ausencia' LIMIT 1`,
+        agenda.id
+      );
       await db.runAsync(
-        `UPDATE agenda_alumnos SET estado = 'programada'
-         WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'ausente'`,
+        "UPDATE agenda_alumnos SET estado = 'programada' WHERE id = ?",
+        agenda.id
+      );
+      if (ausencia || movimiento) {
+        await revertirMovimientoAgenda(db, {
+          alumnoId,
+          agendaId: agenda.id,
+          tipoOriginal: "ausencia",
+          deltaLegacy: -1,
+          contextoLegacy: "reversion_ausencia",
+          fecha,
+        });
+      }
+      await db.runAsync(
+        `DELETE FROM clases WHERE alumno_id = ? AND grupo_id = ?
+         AND fecha = ? AND estado = 'ausente'`,
         alumnoId, grupoId, fecha
       );
-      if (ausencia) {
-        await db.runAsync(
-          "UPDATE alumnos SET pendientes = MAX(0, pendientes - 1) WHERE id = ?", alumnoId
-        );
-        await db.runAsync("DELETE FROM clases WHERE id = ?", ausencia.id);
-      }
     });
   },
 
   async asignarRecuperacion(alumnoId: number, grupoId: number, fecha: string) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
-      const alumno = await db.getFirstAsync<{ pendientes: number }>(
-        "SELECT pendientes FROM alumnos WHERE id = ? AND activo = 1", alumnoId
+      const alumno = await db.getFirstAsync<{ id: number }>(
+        "SELECT id FROM alumnos WHERE id = ? AND activo = 1", alumnoId
       );
-      if (!alumno?.pendientes) throw new Error("El alumno no tiene clases pendientes");
+      if (!alumno || await saldoPendientes(db, alumnoId) < 1) {
+        throw new Error("El alumno no tiene clases pendientes");
+      }
       const ausenciaId = await buscarAusenciaSinCubrir(db, grupoId, fecha);
       await db.runAsync(
-        "INSERT INTO clases (alumno_id,grupo_id,fecha,estado) VALUES (?,?,?,'recuperacion')",
+        `INSERT INTO clases (alumno_id,grupo_id,fecha,estado)
+         SELECT ?,?,?,'recuperacion'
+         WHERE NOT EXISTS (
+           SELECT 1 FROM clases WHERE alumno_id = ? AND grupo_id = ?
+             AND fecha = ? AND estado = 'recuperacion'
+         )`,
+        alumnoId, grupoId, fecha,
         alumnoId, grupoId, fecha
       );
       await db.runAsync(
@@ -93,9 +131,18 @@ export const agendaRepository = {
            cubre_agenda_id = excluded.cubre_agenda_id, origen_agenda_id = NULL`,
         alumnoId, grupoId, fecha, ausenciaId
       );
-      await db.runAsync(
-        "UPDATE alumnos SET pendientes = MAX(0, pendientes - 1) WHERE id = ?", alumnoId
+      const agenda = await db.getFirstAsync<{ id: number }>(
+        "SELECT id FROM agenda_alumnos WHERE alumno_id = ? AND fecha = ?",
+        alumnoId, fecha
       );
+      if (!agenda) throw new Error("No se pudo crear la recuperación");
+      await registrarMovimientoAgenda(db, {
+        alumnoId,
+        agendaId: agenda.id,
+        delta: -1,
+        tipo: "recuperacion",
+        fecha,
+      });
     });
   },
 
@@ -207,13 +254,18 @@ export const agendaRepository = {
     await db.withTransactionAsync(async () => {
       await db.runAsync("UPDATE agenda_alumnos SET estado = 'cancelada' WHERE id = ?", agendaId);
       if (item.tipo === "recuperacion" && item.estado === "programada") {
-        await db.runAsync("UPDATE alumnos SET pendientes = pendientes + 1 WHERE id = ?", item.alumno_id);
+        await revertirMovimientoAgenda(db, {
+          alumnoId: item.alumno_id,
+          agendaId: item.id,
+          tipoOriginal: "recuperacion",
+          deltaLegacy: 1,
+          contextoLegacy: "reversion_recuperacion",
+          fecha: item.fecha,
+        });
         await db.runAsync(
-          `DELETE FROM clases WHERE id = (
-            SELECT id FROM clases WHERE alumno_id = ? AND grupo_id = ?
-              AND fecha = ? AND estado = 'recuperacion'
-            ORDER BY id DESC LIMIT 1
-          )`, item.alumno_id, item.grupo_id, item.fecha
+          `DELETE FROM clases WHERE alumno_id = ? AND grupo_id = ?
+            AND fecha = ? AND estado = 'recuperacion'`,
+          item.alumno_id, item.grupo_id, item.fecha
         );
       }
       if (item.tipo === "manual" && item.origen_agenda_id) {

@@ -1,6 +1,11 @@
 # Propuesta de consistencia de agenda y pendientes
 
-Estado: propuesta, todavía no implementada.
+Estado: primera etapa implementada el 7 de agosto de 2026.
+
+La implementación conserva `clases` y `alumnos.pendientes` durante la etapa de
+transición. Los cambios nuevos ya se registran en `movimientos_pendientes` y el
+contador compatible se actualiza exclusivamente desde ese libro. El detalle de
+lo incorporado está en [`docs/mejoras.md`](../mejoras.md).
 
 Fecha del análisis: 7 de agosto de 2026.
 
@@ -120,8 +125,11 @@ Reglas del libro:
 - quitar o revertir: nuevo movimiento opuesto con `tipo = 'reversion'`;
 - ajuste manual: diferencia entre el saldo solicitado y el saldo actual;
 - mover una clase: ningún movimiento;
-- `clave` hace idempotente cada operación, por ejemplo
-  `ausencia:agenda:123` o `recuperacion:agenda:456`.
+- `clave` hace idempotente cada operación;
+- una misma fila de agenda admite varios ciclos de cambio, por ejemplo
+  `ausencia:agenda:123:ciclo:1` y `ausencia:agenda:123:ciclo:2`;
+- cada reversión referencia por `revierte_movimiento_id` exactamente el
+  movimiento que deshace.
 
 El saldo se obtiene con:
 
@@ -135,7 +143,7 @@ La aplicación debe impedir una recuperación si el saldo calculado es menor que
 uno. No debe corregir saldos negativos con `MAX(0, ...)`, porque eso ocultaría
 un error de consistencia.
 
-## Migración segura propuesta
+## Migración segura implementada
 
 No es posible reconstruir con certeza el saldo actual usando `clases`: existen
 ajustes manuales y caminos que pueden haber dejado filas desincronizadas. Para
@@ -147,7 +155,8 @@ no cambiar lo que ve la profesora:
 3. empezar a escribir todos los cambios nuevos en el libro;
 4. durante una versión, actualizar también `alumnos.pendientes` en la misma
    transacción y comprobar que coincide con `SUM(delta)`;
-5. agregar una auditoría al iniciar que informe diferencias sin modificar datos;
+5. agregar una auditoría al iniciar que detenga la inicialización si encuentra
+   diferencias, sin modificar datos silenciosamente;
 6. cuando la versión haya sido validada con una copia real, dejar de escribir
    en `clases` y pasar las lecturas al saldo calculado;
 7. conservar `clases` como `clases_legacy` durante al menos una versión de
@@ -189,9 +198,9 @@ WHERE (ag.cubre_agenda_id IS NOT NULL AND cobertura.id IS NULL)
    OR (ag.origen_agenda_id IS NOT NULL AND origen.id IS NULL);
 ```
 
-## Criterios para aprobar la futura implementación
+## Criterios verificados en la primera implementación
 
-- las 18 pruebas actuales continúan pasando;
+- las pruebas existentes y las nuevas continúan pasando (23 pruebas);
 - se agregan pruebas de idempotencia y reversión del libro;
 - una migración repetida no duplica movimientos;
 - el saldo visible antes y después de migrar es idéntico para cada alumno;
