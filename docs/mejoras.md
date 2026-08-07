@@ -83,4 +83,9 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   `components/calendario/DetalleDiaModal.tsx`. Allí se presentan las personas,
   asistencia, modelos y acciones de agregar, quitar o mover, mientras la
   pantalla mantiene las operaciones y el acceso a datos.
+- La carga mensual y el estado de agenda, alumnos, feriados, modelos y grupos se
+  movieron a `hooks/useCalendarioData.ts`.
+- La selección de personas, grupo de destino y ocupación del día quedó como
+  lógica pura en `lib/calendario.ts`, con pruebas para días de uno o varios
+  grupos.
 - No se modificaron textos, colores, cálculos de cupos ni comportamiento visible.

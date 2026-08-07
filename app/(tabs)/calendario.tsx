@@ -9,21 +9,20 @@ import { ModeloPersonaModal } from "@/components/agenda/ModeloPersonaModal";
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
 import { DetalleDiaModal } from "@/components/calendario/DetalleDiaModal";
 import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
+import { useCalendarioData } from "@/hooks/useCalendarioData";
 import {
-  agendaDelMes, asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
+  asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
   moverAgendaDelDia, quitarFechaAgenda, registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
-import { fijarAlumnoEnGrupo, listarAlumnos } from "@/repositories/alumnoRepository";
-import { guardarFeriado, listarFeriados, quitarFeriado } from "@/repositories/feriadoRepository";
-import { listarGrupos } from "@/repositories/grupoRepository";
-import { listarModelos } from "@/repositories/modeloRepository";
+import { fijarAlumnoEnGrupo } from "@/repositories/alumnoRepository";
+import { guardarFeriado, quitarFeriado } from "@/repositories/feriadoRepository";
 import { colors, groupColors } from "@/lib/theme";
 import { textoHorarioAviso } from "@/lib/horarios";
 import { notificacionesDisponibles, reprogramarNotificaciones } from "@/lib/notifications";
 import { TipoOcupacion } from "@/lib/seleccionAgenda";
-import { grupoOcurreEnFecha, textoFrecuenciaGrupo } from "@/lib/grupos";
+import { textoFrecuenciaGrupo } from "@/lib/grupos";
 import { motivoMovimientoClase } from "@/lib/movimientosClase";
-import { AgendaAlumno, Alumno, Feriado, Grupo, Modelo, TipoMovimientoClase } from "@/models";
+import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
 
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const iso = (year: number, month: number, day: number) =>
@@ -38,21 +37,29 @@ export default function CalendarioScreen() {
   const params = useLocalSearchParams<{ fecha?: string; grupoId?: string; alumnoId?: string }>();
   const handledRoute = useRef("");
   const handledAlumno = useRef("");
-  const today = new Date();
-  const hoyTexto = iso(today.getFullYear(), today.getMonth(), today.getDate());
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [agenda, setAgenda] = useState<AgendaAlumno[]>([]);
-  const [alumnos, setAlumnos] = useState<Alumno[]>([]);
-  const [feriados, setFeriados] = useState<Feriado[]>([]);
-  const [modelos, setModelos] = useState<Modelo[]>([]);
-  const [grupos, setGrupos] = useState<Grupo[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [detailGroupId, setDetailGroupId] = useState<number | null>(null);
+  const {
+    hoyTexto,
+    cursor,
+    setCursor,
+    cambiarMes,
+    agenda,
+    alumnos,
+    feriados,
+    modelos,
+    grupos,
+    cargar,
+    personasSeleccionadas: selectedEntries,
+    feriadoSeleccionado: selectedHoliday,
+    grupoDestinoSeleccionado,
+    idsOcupadosSeleccionados,
+  } = useCalendarioData(selectedDate, detailGroupId);
   const [grupoEditor, setGrupoEditor] = useState<{
     grupo: Grupo | null;
     fechaInicial: string;
     colorInicial: string;
   } | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [detailGroupId, setDetailGroupId] = useState<number | null>(null);
   const [guardandoAsistencia, setGuardandoAsistencia] = useState<number | null>(null);
   const [selectorAlumnoVisible, setSelectorAlumnoVisible] = useState(false);
   const [selectorFechaVisible, setSelectorFechaVisible] = useState(false);
@@ -60,24 +67,6 @@ export default function CalendarioScreen() {
   const [selectorModeloVisible, setSelectorModeloVisible] = useState(false);
   const [editAgenda, setEditAgenda] = useState<AgendaAlumno | null>(null);
 
-  const cargar = useCallback(async () => {
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const last = new Date(year, month + 1, 0).getDate();
-    const inicio = iso(year, month, 1), fin = iso(year, month, last);
-    const finAgendaDate = new Date(year, month, last, 12);
-    finAgendaDate.setDate(finAgendaDate.getDate() + 60);
-    const finAgenda = iso(
-      finAgendaDate.getFullYear(), finAgendaDate.getMonth(), finAgendaDate.getDate()
-    );
-    const [items, personas, diasFeriados, modelosCargados, gruposCargados] = await Promise.all([
-      agendaDelMes(inicio, finAgenda), listarAlumnos(), listarFeriados(inicio, fin),
-      listarModelos(), listarGrupos(),
-    ]);
-    setAgenda(items); setAlumnos(personas); setFeriados(diasFeriados);
-    setModelos(modelosCargados); setGrupos(gruposCargados);
-  }, [cursor]);
-  useFocusEffect(useCallback(() => { cargar(); }, [cargar]));
   useFocusEffect(useCallback(() => () => {
     handledRoute.current = "";
     handledAlumno.current = "";
@@ -93,7 +82,7 @@ export default function CalendarioScreen() {
     setCursor(new Date(fecha.getFullYear(), fecha.getMonth(), 1));
     setSelectedDate(params.fecha);
     setDetailGroupId(Number(params.grupoId) || null);
-  }, [params.fecha, params.grupoId, params.alumnoId]);
+  }, [params.fecha, params.grupoId, params.alumnoId, setCursor]);
 
   useEffect(() => {
     if (!params.alumnoId || !selectedDate) return;
@@ -110,22 +99,6 @@ export default function CalendarioScreen() {
       setSelectorModeloVisible(true);
     }
   }, [agenda, params.alumnoId, selectedDate, detailGroupId]);
-
-  const selectedEntries = agenda.filter(item =>
-    item.fecha === selectedDate && (!detailGroupId || item.grupo_id === detailGroupId)
-  );
-  const selectedHoliday = feriados.find(item => item.fecha === selectedDate);
-  const idsGruposConAgendaSeleccionada = new Set(
-    agenda.filter(item => item.fecha === selectedDate).map(item => item.grupo_id)
-  );
-  const gruposFechaSeleccionada = selectedDate
-    ? grupos.filter(item =>
-        grupoOcurreEnFecha(item, selectedDate) || idsGruposConAgendaSeleccionada.has(item.id)
-      )
-    : [];
-  const grupoDestinoSeleccionado = detailGroupId
-    ? grupos.find(item => item.id === detailGroupId) || null
-    : gruposFechaSeleccionada.length === 1 ? gruposFechaSeleccionada[0] : null;
 
   const abrirDia = (date: string) => {
     setSelectedDate(date); setDetailGroupId(null);
@@ -313,9 +286,7 @@ export default function CalendarioScreen() {
           agenda={agenda}
           feriados={feriados}
           grupos={grupos}
-          onCambiarMes={incremento => setCursor(new Date(
-            cursor.getFullYear(), cursor.getMonth() + incremento, 1
-          ))}
+          onCambiarMes={cambiarMes}
           onAbrirDia={abrirDia}
         />
         <View style={styles.tip}>
@@ -419,7 +390,7 @@ export default function CalendarioScreen() {
         alumnos={alumnos}
         agenda={agenda}
         fecha={selectedDate || hoyTexto}
-        idsOcupados={agenda.filter(item => item.fecha === selectedDate).map(item => item.alumno_id)}
+        idsOcupados={idsOcupadosSeleccionados}
         grupoDestino={grupoDestinoSeleccionado}
         onClose={() => setSelectorAlumnoVisible(false)}
         onConfirm={agregar}

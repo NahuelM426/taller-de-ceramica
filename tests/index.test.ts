@@ -1,5 +1,6 @@
 import "./agendaRepository.test";
 import "./agendaMaintenance.test";
+import "./calendario.test";
 import "./cambiosGrupo.test";
 import "./copiaSeguridad.test";
 import "./feriados.test";
