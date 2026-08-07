@@ -11,18 +11,32 @@ async function generarAgendaConDb(
   fechaInicio: string,
   fechaFin: string
 ) {
+  const filasExistentes = await db.getAllAsync<{ fecha: string }>(
+    `SELECT fecha FROM agenda_alumnos
+     WHERE alumno_id = ? AND fecha BETWEEN ? AND ?`,
+    alumnoId,
+    fechaInicio,
+    fechaFin
+  );
+  const fechasExistentes = new Set(filasExistentes.map(fila => fila.fecha));
+  let creadas = 0;
   const fecha = new Date(`${fechaInicio}T12:00:00`);
   while (fechaLocal(fecha) <= fechaFin) {
     const fechaTexto = fechaLocal(fecha);
-    if (grupoOcurreEnFecha(grupo, fechaTexto)) {
-      await db.runAsync(
+    if (grupoOcurreEnFecha(grupo, fechaTexto) && !fechasExistentes.has(fechaTexto)) {
+      const resultado = await db.runAsync(
         `INSERT OR IGNORE INTO agenda_alumnos
          (alumno_id,grupo_id,fecha,tipo,estado) VALUES (?,?,?,'regular','programada')`,
         alumnoId, grupo.id, fechaTexto
       );
+      if (resultado.changes > 0) {
+        fechasExistentes.add(fechaTexto);
+        creadas += 1;
+      }
     }
     fecha.setDate(fecha.getDate() + 1);
   }
+  return creadas;
 }
 
 export async function generarAgendaHasta(
@@ -35,8 +49,8 @@ export async function generarAgendaHasta(
   const grupo = await db.getFirstAsync<Grupo>(
     "SELECT * FROM grupos WHERE id = ? AND activo = 1", grupoId
   );
-  if (!grupo) return;
-  await generarAgendaConDb(db, alumnoId, grupo, fechaInicio, fechaFin);
+  if (!grupo) return 0;
+  return generarAgendaConDb(db, alumnoId, grupo, fechaInicio, fechaFin);
 }
 
 export async function rearmarAgendaRegularGrupo(db: Database, grupoId: number) {

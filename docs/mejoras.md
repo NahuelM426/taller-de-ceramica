@@ -57,3 +57,15 @@ anterior.
   de copias antiguas.
 
 No se generó ni publicó una versión de producción como parte de este cambio.
+
+## 7 de agosto de 2026 - Rendimiento de agenda y SQLite
+
+- Se agregaron índices para las búsquedas frecuentes por fecha, grupo, alumno,
+  estado, cobertura, origen y movimientos de pendientes.
+- Los índices se crean después de completar las columnas de instalaciones
+  anteriores, evitando fallos durante una actualización.
+- La generación periódica de agenda consulta una sola vez las fechas existentes
+  de cada alumno y ejecuta inserciones únicamente para las fechas faltantes.
+- Las clases canceladas, movidas o cargadas manualmente se conservan y no se
+  reemplazan al completar el horizonte anual.
+- Se agregaron pruebas para verificar los índices y la generación incremental.

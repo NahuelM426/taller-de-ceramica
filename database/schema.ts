@@ -159,3 +159,28 @@ export async function migrarColumnas(db: Database) {
     await db.runAsync("UPDATE grupos SET fecha_inicio = ? WHERE id = ?", fechaInicio, grupo.id);
   }
 }
+
+export async function crearIndices(db: Database) {
+  await db.execAsync(`
+    CREATE INDEX IF NOT EXISTS idx_agenda_fecha_estado_grupo
+      ON agenda_alumnos(fecha, estado, grupo_id);
+    CREATE INDEX IF NOT EXISTS idx_agenda_grupo_fecha_tipo_estado
+      ON agenda_alumnos(grupo_id, fecha, tipo, estado);
+    CREATE INDEX IF NOT EXISTS idx_agenda_alumno_tipo_fecha_estado
+      ON agenda_alumnos(alumno_id, tipo, fecha, estado);
+    CREATE INDEX IF NOT EXISTS idx_agenda_cubre_estado
+      ON agenda_alumnos(cubre_agenda_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_agenda_origen_estado
+      ON agenda_alumnos(origen_agenda_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_movimientos_alumno_id
+      ON movimientos_pendientes(alumno_id, id);
+    CREATE INDEX IF NOT EXISTS idx_movimientos_agenda_tipo_id
+      ON movimientos_pendientes(agenda_id, tipo, id);
+    CREATE INDEX IF NOT EXISTS idx_clases_alumno_grupo_fecha_estado
+      ON clases(alumno_id, grupo_id, fecha, estado);
+    CREATE INDEX IF NOT EXISTS idx_alumnos_grupo_estado
+      ON alumnos(grupo_id, activo, sin_grupo);
+    CREATE INDEX IF NOT EXISTS idx_grupos_activos_dia_hora
+      ON grupos(activo, dia, hora);
+  `);
+}
