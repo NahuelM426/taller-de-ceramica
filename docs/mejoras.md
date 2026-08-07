@@ -69,3 +69,11 @@ No se generó ni publicó una versión de producción como parte de este cambio.
 - Las clases canceladas, movidas o cargadas manualmente se conservan y no se
   reemplazan al completar el horizonte anual.
 - Se agregaron pruebas para verificar los índices y la generación incremental.
+
+## 7 de agosto de 2026 - Refactor gradual del calendario
+
+- La grilla mensual, sus marcas de grupos, vacantes, feriados, navegación y
+  animación se separaron en `components/calendario/CalendarioMes.tsx`.
+- `app/(tabs)/calendario.tsx` conserva la carga de datos y las acciones de la
+  pantalla, pero dejó de contener los detalles visuales de la grilla.
+- No se modificaron textos, colores, cálculos de cupos ni comportamiento visible.
