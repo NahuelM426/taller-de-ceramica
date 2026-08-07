@@ -3,6 +3,10 @@
   "compilerOptions": {
     "paths": {
       "@/database/connection": ["./tests/helpers/connection.ts"],
+      "expo-constants": ["./tests/helpers/expoConstants.ts"],
+      "expo-document-picker": ["./tests/helpers/expoDocumentPicker.ts"],
+      "expo-file-system": ["./tests/helpers/expoFileSystem.ts"],
+      "expo-sharing": ["./tests/helpers/expoSharing.ts"],
       "@/*": ["./*"]
     }
   }
