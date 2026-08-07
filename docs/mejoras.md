@@ -89,3 +89,10 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   lógica pura en `lib/calendario.ts`, con pruebas para días de uno o varios
   grupos.
 - No se modificaron textos, colores, cálculos de cupos ni comportamiento visible.
+
+### Corrección de reapertura del modelo
+
+- El parámetro `alumnoId` recibido desde la pantalla Hoy ahora se consume una
+  sola vez después de abrir el modelo de esa persona.
+- Mover una clase, marcar un feriado, deshacerlo o volver al calendario ya no
+  vuelve a abrir automáticamente el modelo del último contacto consultado.

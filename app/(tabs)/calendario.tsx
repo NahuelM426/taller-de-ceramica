@@ -97,6 +97,7 @@ export default function CalendarioScreen() {
       handledAlumno.current = key;
       setEditAgenda(item);
       setSelectorModeloVisible(true);
+      router.setParams({ alumnoId: undefined });
     }
   }, [agenda, params.alumnoId, selectedDate, detailGroupId]);
 
