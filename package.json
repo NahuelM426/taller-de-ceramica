@@ -11,7 +11,8 @@
     "build:apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
     "build:aab": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-aab.ps1",
     "lint": "expo lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/index.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -34,9 +35,11 @@
     "react-native-screens": "~4.16.0"
   },
   "devDependencies": {
+    "@types/node": "^20.19.17",
     "@types/react": "~19.1.10",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "tsx": "^4.23.11",
     "typescript": "~5.9.2"
   }
 }
