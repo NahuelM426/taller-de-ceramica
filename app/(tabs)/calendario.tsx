@@ -2,32 +2,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { AddButton, Choice, Empty, Field, FormModal, Screen, ui } from "@/components/ui";
+import { AddButton, Empty, FormModal, Screen, ui } from "@/components/ui";
 import { AgregarPersonaModal } from "@/components/agenda/AgregarPersonaModal";
 import { CalendarioFechaModal } from "@/components/agenda/CalendarioFechaModal";
 import { ModeloPersonaModal } from "@/components/agenda/ModeloPersonaModal";
-import { BotonSelectorHora, SelectorHoraModal } from "@/components/agenda/SelectorHoraModal";
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
+import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
 import {
   agendaDelMes, asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
   moverAgendaDelDia, quitarFechaAgenda, registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
 import { fijarAlumnoEnGrupo, listarAlumnos } from "@/repositories/alumnoRepository";
 import { guardarFeriado, listarFeriados, quitarFeriado } from "@/repositories/feriadoRepository";
-import { crearGrupo, editarGrupo, eliminarGrupo, listarGrupos } from "@/repositories/grupoRepository";
+import { listarGrupos } from "@/repositories/grupoRepository";
 import { listarModelos } from "@/repositories/modeloRepository";
 import { colors, groupColors } from "@/lib/theme";
-import { anticipacionDesdeHorario, horarioDesdeAnticipacion, textoHorarioAviso } from "@/lib/horarios";
+import { textoHorarioAviso } from "@/lib/horarios";
 import { notificacionesDisponibles, reprogramarNotificaciones } from "@/lib/notifications";
 import { TipoOcupacion } from "@/lib/seleccionAgenda";
 import { grupoOcurreEnFecha, textoFrecuenciaGrupo } from "@/lib/grupos";
 import { etiquetaRecuperacion, motivoMovimientoClase } from "@/lib/movimientosClase";
-import {
-  AgendaAlumno, Alumno, Feriado, FrecuenciaGrupo, Grupo, Modelo, TipoMovimientoClase,
-} from "@/models";
+import { AgendaAlumno, Alumno, Feriado, Grupo, Modelo, TipoMovimientoClase } from "@/models";
 
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-const diasSelectorGrupo = [1, 2, 3, 4, 5, 6, 0];
 const SIN_NECESIDADES = "No necesita";
 const iso = (year: number, month: number, day: number) =>
   `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -49,21 +46,11 @@ export default function CalendarioScreen() {
   const [feriados, setFeriados] = useState<Feriado[]>([]);
   const [modelos, setModelos] = useState<Modelo[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
-  const [groupModal, setGroupModal] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<Grupo | null>(null);
-  const [groupName, setGroupName] = useState("");
-  const [groupDay, setGroupDay] = useState(1);
-  const [groupTime, setGroupTime] = useState("14:00");
-  const [groupCapacity, setGroupCapacity] = useState("6");
-  const [groupColor, setGroupColor] = useState(groupColors[0]);
-  const [groupNotification, setGroupNotification] = useState(false);
-  const [groupFrequency, setGroupFrequency] = useState<FrecuenciaGrupo>("semanal");
-  const [groupStartDate, setGroupStartDate] = useState(() => proximaFechaDelDia(1, hoyTexto));
-  const [notifyDays, setNotifyDays] = useState("1");
-  const [notifyTime, setNotifyTime] = useState("10:00");
-  const [selectorGroupTimeVisible, setSelectorGroupTimeVisible] = useState(false);
-  const [selectorNotifyTimeVisible, setSelectorNotifyTimeVisible] = useState(false);
-  const [selectorGroupStartVisible, setSelectorGroupStartVisible] = useState(false);
+  const [grupoEditor, setGrupoEditor] = useState<{
+    grupo: Grupo | null;
+    fechaInicial: string;
+    colorInicial: string;
+  } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [detailGroupId, setDetailGroupId] = useState<number | null>(null);
   const [guardandoAsistencia, setGuardandoAsistencia] = useState<number | null>(null);
@@ -296,108 +283,21 @@ export default function CalendarioScreen() {
       ]
     );
   };
-  const guardarGrupo = async () => {
-    if (!groupName.trim() || !groupTime.trim()) return;
-    const diasAntes = Math.max(0, Number(notifyDays) || 0);
-    const minutosAntes = anticipacionDesdeHorario(groupTime, diasAntes, notifyTime);
-    if (groupNotification && minutosAntes < 0) {
-      Alert.alert(
-        "Horario de aviso inválido",
-        "Si elegís 0 días antes, la hora del aviso tiene que ser anterior a la clase."
-      );
-      return;
-    }
-    if (new Date(`${groupStartDate}T12:00:00`).getDay() !== groupDay) {
-      Alert.alert("Revisá la primera clase", "La fecha elegida tiene que coincidir con el día del grupo.");
-      return;
-    }
-    const data = {
-      nombre: groupName,
-      dia: groupDay,
-      hora: groupTime,
-      capacidad: Math.max(1, Number(groupCapacity) || 6),
-      color: groupColor,
-      notificacion: groupNotification ? 1 : 0,
-      minutos_antes: minutosAntes,
-      frecuencia: groupFrequency,
-      fecha_inicio: groupStartDate,
-    };
-    if (editingGroup) {
-      await editarGrupo(editingGroup.id, data);
-    } else {
-      await crearGrupo({
-        ...data,
-      });
-    }
-    const notificacionesOk = await reprogramarNotificaciones(groupNotification);
-    if (groupNotification && !notificacionesOk) {
-      Alert.alert(
-        notificacionesDisponibles() ? "Notificaciones desactivadas" : "Requiere la app instalada",
-        notificacionesDisponibles()
-          ? "El grupo quedó guardado, pero el teléfono no autorizó los recordatorios. Podés habilitarlos desde los ajustes del dispositivo."
-          : "Expo Go no ejecuta este módulo completo en Android. El recordatorio funcionará en la development build o APK instalada de Taller de Cerámica."
-      );
-    }
-    setGroupName(""); setGroupDay(1); setGroupTime("14:00");
-    setGroupCapacity("6"); setGroupColor(groupColors[0]); setGroupNotification(false);
-    setNotifyDays("1"); setNotifyTime("10:00"); setEditingGroup(null);
-    setGroupFrequency("semanal"); setGroupStartDate(proximaFechaDelDia(1, hoyTexto));
-    setGroupModal(false); await cargar();
-  };
-
   const abrirNuevoGrupo = (fechaInicial?: string) => {
     const fechaBase = fechaInicial || proximaFechaDelDia(1, hoyTexto);
-    const diaBase = new Date(`${fechaBase}T12:00:00`).getDay();
-    setEditingGroup(null); setGroupName(""); setGroupDay(diaBase);
-    setGroupTime("14:00"); setGroupCapacity("6");
-    setGroupColor(groupColors[grupos.length % groupColors.length]);
-    setGroupNotification(false); setNotifyDays("1"); setNotifyTime("10:00");
-    setGroupFrequency("semanal");
-    setGroupStartDate(fechaBase);
-    setGroupModal(true);
+    setGrupoEditor({
+      grupo: null,
+      fechaInicial: fechaBase,
+      colorInicial: groupColors[grupos.length % groupColors.length],
+    });
   };
 
   const abrirEditarGrupo = (grupo: Grupo) => {
-    setEditingGroup(grupo); setGroupName(grupo.nombre); setGroupDay(grupo.dia);
-    setGroupTime(grupo.hora); setGroupCapacity(String(grupo.capacidad));
-    setGroupColor(grupo.color); setGroupNotification(!!grupo.notificacion);
-    setGroupFrequency(grupo.frecuencia);
-    setGroupStartDate(grupo.fecha_inicio || proximaFechaDelDia(grupo.dia, hoyTexto));
-    const horarioAviso = horarioDesdeAnticipacion(grupo.hora, grupo.minutos_antes);
-    setNotifyDays(String(horarioAviso.diasAntes));
-    setNotifyTime(horarioAviso.horaAviso);
-    setGroupModal(true);
-  };
-
-  const confirmarEliminarGrupo = () => {
-    if (!editingGroup) return;
-    const integrantes = alumnos.filter(alumno =>
-      !alumno.sin_grupo && alumno.grupo_id === editingGroup.id
-    ).length;
-    Alert.alert(
-      "Eliminar grupo",
-      `${editingGroup.nombre} dejará de aparecer. ${integrantes
-        ? `${integrantes} alumno${integrantes === 1 ? "" : "s"} quedará${integrantes === 1 ? "" : "n"} sin grupo habitual. `
-        : ""}Las clases futuras se cancelarán y el historial anterior se conservará.`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar grupo",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await eliminarGrupo(editingGroup.id);
-              await reprogramarNotificaciones(false);
-              setEditingGroup(null);
-              setGroupModal(false);
-              await cargar();
-            } catch {
-              Alert.alert("No se pudo eliminar", "Probá nuevamente en unos segundos.");
-            }
-          },
-        },
-      ]
-    );
+    setGrupoEditor({
+      grupo,
+      fechaInicial: grupo.fecha_inicio || proximaFechaDelDia(grupo.dia, hoyTexto),
+      colorInicial: grupo.color,
+    });
   };
 
   return (
@@ -466,138 +366,28 @@ export default function CalendarioScreen() {
         ))}
       </ScrollView>
 
-      <FormModal
-        visible={groupModal && !selectorGroupTimeVisible && !selectorNotifyTimeVisible && !selectorGroupStartVisible}
-        title={editingGroup ? "Editar grupo" : "Nuevo grupo"}
-        onClose={() => setGroupModal(false)}
-        onSave={guardarGrupo}
-        canSave={!!groupName.trim() && !!groupTime.trim()}
-      >
-        <Field label="Nombre del grupo" value={groupName} onChangeText={setGroupName} placeholder="Ej. Lunes 14 hs" />
-        <Text style={styles.formLabel}>Día de la semana</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {diasSelectorGrupo.map(diaNumero => (
-            <Choice
-              key={diaNumero}
-              label={diasCompletos[diaNumero].slice(0, 3)}
-              selected={groupDay === diaNumero}
-              onPress={() => {
-                setGroupDay(diaNumero);
-                setGroupStartDate(proximaFechaDelDia(diaNumero, hoyTexto));
-              }}
-            />
-          ))}
-        </ScrollView>
-        <BotonSelectorHora label="Hora de la clase" value={groupTime} onPress={() => setSelectorGroupTimeVisible(true)} />
-        <Text style={styles.formLabel}>Frecuencia del grupo</Text>
-        <View style={styles.needChoices}>
-          <Choice label="Todas las semanas" selected={groupFrequency === "semanal"} onPress={() => setGroupFrequency("semanal")} />
-          <Choice label="Cada 15 días" selected={groupFrequency === "quincenal"} onPress={() => setGroupFrequency("quincenal")} />
-        </View>
-        <Pressable onPress={() => setSelectorGroupStartVisible(true)} style={styles.datePickerButton}>
-          <View style={styles.datePickerIcon}>
-            <Ionicons name="calendar-outline" size={20} color={colors.clay} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.datePickerTitle}>
-              Primera clase: {groupStartDate.slice(8, 10)}/{groupStartDate.slice(5, 7)}/{groupStartDate.slice(0, 4)}
-            </Text>
-            <Text style={styles.datePickerText}>
-              {groupFrequency === "quincenal"
-                ? "Define las semanas alternadas a partir de esta fecha"
-                : "El grupo comenzará desde esta fecha"}
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={19} color={colors.clay} />
-        </Pressable>
-        <Field label="Cantidad de personas" value={groupCapacity} onChangeText={setGroupCapacity} keyboardType="number-pad" />
-        <Text style={styles.formLabel}>Color en el calendario</Text>
-        <View style={styles.colorPicker}>
-          {groupColors.map(color => (
-            <Pressable
-              key={color}
-              accessibilityLabel={`Elegir color ${color}`}
-              onPress={() => setGroupColor(color)}
-              style={[
-                styles.colorOption,
-                { backgroundColor: color },
-                groupColor === color && styles.colorOptionOn,
-              ]}
-            >
-              {groupColor === color && <Ionicons name="checkmark" size={18} color="white" />}
-            </Pressable>
-          ))}
-        </View>
-        <Text style={styles.formLabel}>Recordatorio de la clase</Text>
-        <View style={styles.needChoices}>
-          <Choice label="Sin aviso" selected={!groupNotification} onPress={() => setGroupNotification(false)} />
-          <Choice label="Activar aviso" selected={groupNotification} onPress={() => setGroupNotification(true)} />
-        </View>
-        {groupNotification && (
-          <View style={styles.reminderFields}>
-            <View style={{ flex: 1 }}>
-              <Field label="Días antes" value={notifyDays} onChangeText={setNotifyDays} keyboardType="number-pad" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <BotonSelectorHora label="Hora del aviso" value={notifyTime} onPress={() => setSelectorNotifyTimeVisible(true)} />
-            </View>
-          </View>
-        )}
-        <View style={styles.notificationHelp}>
-          <Ionicons name="notifications-outline" size={19} color={colors.primary} />
-          <Text style={styles.notificationHelpText}>
-            El aviso dirá quiénes vienen y cuántas piezas de cada modelo hay que preparar.
-          </Text>
-        </View>
-        {!!editingGroup && (
-          groupDay !== editingGroup.dia ||
-          groupFrequency !== editingGroup.frecuencia ||
-          groupStartDate !== editingGroup.fecha_inicio
-        ) && (
-          <Text style={styles.dateWarning}>
-            Cambiar el día o el turno quincenal rearma las próximas clases habituales. Las fechas que acomodaste manualmente se conservan.
-          </Text>
-        )}
-        {!!editingGroup && (
-          <Pressable onPress={confirmarEliminarGrupo} style={styles.deleteGroupButton}>
-            <Ionicons name="trash-outline" size={19} color={colors.danger} />
-            <Text style={styles.deleteGroupText}>Eliminar grupo</Text>
-          </Pressable>
-        )}
-      </FormModal>
-
-      <SelectorHoraModal
-        visible={selectorGroupTimeVisible}
-        titulo="Hora de la clase"
-        valor={groupTime}
-        onClose={() => setSelectorGroupTimeVisible(false)}
-        onConfirm={hora => {
-          setGroupTime(hora);
-          setSelectorGroupTimeVisible(false);
-        }}
-      />
-      <CalendarioFechaModal
-        visible={selectorGroupStartVisible}
-        titulo="Primera clase del grupo"
-        fechaInicial={groupStartDate}
-        fechaMinima={hoyTexto}
-        onClose={() => setSelectorGroupStartVisible(false)}
-        onConfirm={fecha => {
-          setGroupStartDate(fecha);
-          setGroupDay(new Date(`${fecha}T12:00:00`).getDay());
-          setSelectorGroupStartVisible(false);
-        }}
-      />
-      <SelectorHoraModal
-        visible={selectorNotifyTimeVisible}
-        titulo="Hora del recordatorio"
-        valor={notifyTime}
-        onClose={() => setSelectorNotifyTimeVisible(false)}
-        onConfirm={hora => {
-          setNotifyTime(hora);
-          setSelectorNotifyTimeVisible(false);
-        }}
-      />
+      {!!grupoEditor && (
+        <GrupoFormModal
+          grupo={grupoEditor.grupo}
+          fechaInicial={grupoEditor.fechaInicial}
+          colorInicial={grupoEditor.colorInicial}
+          hoy={hoyTexto}
+          cantidadIntegrantes={grupoEditor.grupo
+            ? alumnos.filter(alumno =>
+                !alumno.sin_grupo && alumno.grupo_id === grupoEditor.grupo?.id
+              ).length
+            : 0}
+          onClose={() => setGrupoEditor(null)}
+          onSaved={async () => {
+            setGrupoEditor(null);
+            await cargar();
+          }}
+          onDeleted={async () => {
+            setGrupoEditor(null);
+            await cargar();
+          }}
+        />
+      )}
 
       <FormModal
         visible={!!selectedDate && !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible}
@@ -809,8 +599,6 @@ const styles = StyleSheet.create({
   attendanceYes: { borderColor: colors.success, backgroundColor: `${colors.success}12` },
   attendanceNo: { borderColor: colors.danger, backgroundColor: `${colors.danger}10` },
   attendanceText: { color: colors.muted, fontSize: 11, fontWeight: "900" },
-  mainButton: { minHeight: 45, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary },
-  mainButtonText: { color: "white", fontSize: 13, fontWeight: "900" },
   personPickerButton: { minHeight: 66, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: "#BCD2CA", backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 10 },
   personPickerIcon: { width: 39, height: 39, borderRadius: 12, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
   personPickerTitle: { color: colors.primary, fontSize: 14, fontWeight: "900" },
@@ -821,8 +609,6 @@ const styles = StyleSheet.create({
   datePickerText: { color: colors.muted, fontSize: 10, marginTop: 3 },
   holidayButton: { minHeight: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#FFF0EF", borderWidth: 1, borderColor: "#F0C5C0" },
   holidayButtonText: { color: colors.danger, fontSize: 13, fontWeight: "900" },
-  needChoices: { flexDirection: "row", gap: 8 },
-  formLabel: { color: colors.ink, fontWeight: "700", fontSize: 14 },
   groupCard: { minHeight: 76, padding: 13, borderRadius: 15, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 11 },
   groupColor: { width: 6, alignSelf: "stretch", borderRadius: 4 },
   groupName: { color: colors.ink, fontSize: 15, fontWeight: "900" },
@@ -830,13 +616,4 @@ const styles = StyleSheet.create({
   groupFrequency: { color: colors.clay, fontSize: 10, fontWeight: "900", marginTop: 3 },
   groupNotification: { fontSize: 10, fontWeight: "800", marginTop: 4 },
   groupEditIcon: { width: 36, height: 36, borderRadius: 11, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
-  notificationHelp: { padding: 12, borderRadius: 12, backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 9 },
-  notificationHelpText: { flex: 1, color: colors.primaryDark, fontSize: 12, lineHeight: 18 },
-  dateWarning: { color: colors.warning, fontSize: 11, lineHeight: 17, fontWeight: "700" },
-  colorPicker: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-  colorOption: { width: 43, height: 43, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  colorOptionOn: { borderWidth: 3, borderColor: colors.ink, transform: [{ scale: 1.08 }] },
-  reminderFields: { flexDirection: "row", gap: 10 },
-  deleteGroupButton: { minHeight: 48, marginTop: 8, borderRadius: 12, borderWidth: 1, borderColor: "#F0C1BD", backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  deleteGroupText: { color: colors.danger, fontSize: 14, fontWeight: "900" },
 });

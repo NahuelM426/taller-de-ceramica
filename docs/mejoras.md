@@ -76,4 +76,7 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   animación se separaron en `components/calendario/CalendarioMes.tsx`.
 - `app/(tabs)/calendario.tsx` conserva la carga de datos y las acciones de la
   pantalla, pero dejó de contener los detalles visuales de la grilla.
+- El formulario de creación y edición de grupos se separó en
+  `components/calendario/GrupoFormModal.tsx`, junto con sus campos, selectores,
+  validaciones, recordatorios y confirmación de eliminación.
 - No se modificaron textos, colores, cálculos de cupos ni comportamiento visible.
