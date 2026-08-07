@@ -1,5 +1,5 @@
 import { AgendaAlumno, Alumno, Grupo } from "@/models";
-import { databasePromise, Database } from "./connection";
+import { databasePromise, Database } from "@/database/connection";
 import { fechaDentroDe, fechaLocal } from "./dates";
 import { grupoOcurreEnFecha } from "@/lib/grupos";
 
