@@ -104,3 +104,11 @@ No se generó ni publicó una versión de producción como parte de este cambio.
 - TypeScript, lint y las 28 pruebas automatizadas fueron verificados antes de
   preparar la compilación.
 - En esta etapa no se generó ni publicó el AAB.
+
+### Corrección del empaquetado AAB en Windows
+
+- El script `build-aab.ps1` ahora ejecuta EAS en modo sin VCS sobre su copia de
+  preparación, evitando el clon temporal que podía fallar con `EPERM` dentro de
+  `AppData\Local\Temp`.
+- La variable `EAS_NO_VCS` se restaura al finalizar, incluso si la compilación
+  falla, para no modificar permanentemente la terminal del usuario.

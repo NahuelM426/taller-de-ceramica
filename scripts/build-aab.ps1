@@ -35,22 +35,11 @@ Get-ChildItem -LiteralPath $taskStage -Recurse -Force | ForEach-Object {
 }
 
 $taskNpx = (Get-Command npx.cmd -ErrorAction Stop).Source
+$taskPreviousNoVcs = $env:EAS_NO_VCS
+$env:EAS_NO_VCS = "1"
 
 Push-Location $taskStage
 try {
-  git init | Out-Null
-  git config user.email "aab-build@local"
-  git config user.name "AAB Build"
-  git add -A
-  git commit -m "AAB build snapshot" | Out-Null
-
-  Get-Item -LiteralPath $taskStage | ForEach-Object {
-    $_.Attributes = $_.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
-  }
-  Get-ChildItem -LiteralPath $taskStage -Recurse -Force | ForEach-Object {
-    $_.Attributes = $_.Attributes -band (-bnot [System.IO.FileAttributes]::ReadOnly)
-  }
-
   Write-Host ""
   Write-Host "Enviando la version actual a Expo para generar el AAB de Google Play..." -ForegroundColor Cyan
   & $taskNpx eas-cli@latest build --platform android --profile production --non-interactive --wait
@@ -64,6 +53,11 @@ try {
   }
 } finally {
   Pop-Location
+  if ($null -eq $taskPreviousNoVcs) {
+    Remove-Item Env:EAS_NO_VCS -ErrorAction SilentlyContinue
+  } else {
+    $env:EAS_NO_VCS = $taskPreviousNoVcs
+  }
 }
 
 $taskBuilds = @($taskBuildJson | ConvertFrom-Json)
