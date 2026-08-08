@@ -112,3 +112,6 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   `AppData\Local\Temp`.
 - La variable `EAS_NO_VCS` se restaura al finalizar, incluso si la compilación
   falla, para no modificar permanentemente la terminal del usuario.
+- La consulta del AAB terminado se ejecuta nuevamente desde el repositorio real
+  y con el entorno restaurado, evitando que los avisos del modo sin VCS
+  contaminen la respuesta JSON de Expo.

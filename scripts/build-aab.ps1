@@ -46,11 +46,6 @@ try {
   if ($LASTEXITCODE -ne 0) {
     throw "Expo no pudo completar la compilacion. La solicitud puede seguir activa en expo.dev."
   }
-
-  $taskBuildJson = & $taskNpx eas-cli@latest build:list --platform android --build-profile production --limit 1 --json --non-interactive
-  if ($LASTEXITCODE -ne 0) {
-    throw "No se pudo consultar el resultado de la compilacion."
-  }
 } finally {
   Pop-Location
   if ($null -eq $taskPreviousNoVcs) {
@@ -58,6 +53,11 @@ try {
   } else {
     $env:EAS_NO_VCS = $taskPreviousNoVcs
   }
+}
+
+$taskBuildJson = & $taskNpx eas-cli@latest build:list --platform android --build-profile production --limit 1 --json --non-interactive
+if ($LASTEXITCODE -ne 0) {
+  throw "No se pudo consultar el resultado de la compilacion."
 }
 
 $taskBuilds = @($taskBuildJson | ConvertFrom-Json)
