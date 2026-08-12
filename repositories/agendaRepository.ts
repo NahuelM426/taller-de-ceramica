@@ -1,6 +1,6 @@
 import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
 import { buscarAusenciaSinCubrir } from "@/database/agendaMaintenance";
-import { databasePromise } from "@/database/connection";
+import { databasePromise, Database } from "@/database/connection";
 import {
   registrarMovimientoAgenda,
   revertirMovimientoAgenda,
@@ -19,6 +19,150 @@ const SELECT_AGENDA = `
   JOIN grupos gh ON gh.id = a.grupo_id
   LEFT JOIN modelos mo ON mo.id = ag.modelo_id
 `;
+
+type AgendaCancelable = Pick<AgendaAlumno,
+  "id" | "alumno_id" | "grupo_id" | "fecha" | "tipo" | "estado" | "origen_agenda_id"
+>;
+
+async function tieneMovimientoActivo(
+  db: Database,
+  agendaId: number,
+  tipo: "ausencia" | "recuperacion"
+) {
+  const movimiento = await db.getFirstAsync<{ id: number }>(`
+    SELECT m.id FROM movimientos_pendientes m
+    WHERE m.agenda_id = ? AND m.tipo = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM movimientos_pendientes reversion
+        WHERE reversion.revierte_movimiento_id = m.id
+      )
+    ORDER BY m.id DESC LIMIT 1
+  `, agendaId, tipo);
+  return !!movimiento;
+}
+
+export async function cancelarAgendaEnDb(
+  db: Database,
+  item: AgendaCancelable,
+  contexto: string
+) {
+  if (item.estado === "cancelada") return false;
+
+  if (item.estado === "ausente") {
+    const ausenciaAuxiliar = await db.getFirstAsync<{ id: number }>(
+      `SELECT id FROM clases
+       WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'ausente'
+       ORDER BY id DESC LIMIT 1`,
+      item.alumno_id, item.grupo_id, item.fecha
+    );
+    if (ausenciaAuxiliar || await tieneMovimientoActivo(db, item.id, "ausencia")) {
+      await revertirMovimientoAgenda(db, {
+        alumnoId: item.alumno_id,
+        agendaId: item.id,
+        tipoOriginal: "ausencia",
+        deltaLegacy: -1,
+        contextoLegacy: `${contexto}_ausencia`,
+        fecha: item.fecha,
+      });
+    }
+    await db.runAsync(
+      `DELETE FROM clases
+       WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'ausente'`,
+      item.alumno_id, item.grupo_id, item.fecha
+    );
+  }
+
+  if (item.tipo === "recuperacion") {
+    const recuperacionAuxiliar = await db.getFirstAsync<{ id: number }>(
+      `SELECT id FROM clases
+       WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'recuperacion'
+       ORDER BY id DESC LIMIT 1`,
+      item.alumno_id, item.grupo_id, item.fecha
+    );
+    if (recuperacionAuxiliar || await tieneMovimientoActivo(db, item.id, "recuperacion")) {
+      await revertirMovimientoAgenda(db, {
+        alumnoId: item.alumno_id,
+        agendaId: item.id,
+        tipoOriginal: "recuperacion",
+        deltaLegacy: 1,
+        contextoLegacy: `${contexto}_recuperacion`,
+        fecha: item.fecha,
+      });
+    }
+    await db.runAsync(
+      `DELETE FROM clases
+       WHERE alumno_id = ? AND grupo_id = ? AND fecha = ? AND estado = 'recuperacion'`,
+      item.alumno_id, item.grupo_id, item.fecha
+    );
+  }
+
+  if (item.tipo === "manual" && item.origen_agenda_id) {
+    await db.runAsync(
+      `UPDATE agenda_alumnos SET estado = 'programada'
+       WHERE id = ? AND estado = 'ausente'
+         AND NOT EXISTS (
+           SELECT 1 FROM movimientos_pendientes m
+           WHERE m.agenda_id = agenda_alumnos.id AND m.tipo = 'ausencia'
+             AND NOT EXISTS (
+               SELECT 1 FROM movimientos_pendientes r
+               WHERE r.revierte_movimiento_id = m.id
+             )
+         )`,
+      item.origen_agenda_id
+    );
+  }
+
+  await db.runAsync("UPDATE agenda_alumnos SET estado = 'cancelada' WHERE id = ?", item.id);
+  return true;
+}
+
+export async function moverAgendaDelDiaEnDb(
+  db: Database,
+  fechaOrigen: string,
+  fechaDestino: string,
+  motivo: TipoMovimientoClase
+) {
+  if (fechaOrigen === fechaDestino) {
+    throw new Error("La nueva fecha debe ser diferente de la fecha original");
+  }
+  const items = await db.getAllAsync<AgendaAlumno>(
+    `SELECT ag.*, a.nombre AS alumno_nombre
+     FROM agenda_alumnos ag
+     JOIN alumnos a ON a.id = ag.alumno_id
+     WHERE ag.fecha = ? AND ag.estado = 'programada'
+     ORDER BY ag.id`,
+    fechaOrigen
+  );
+
+  for (const item of items) {
+    const conflicto = await db.getFirstAsync<{ id: number }>(
+      `SELECT id FROM agenda_alumnos
+       WHERE alumno_id = ? AND fecha = ? AND id != ?`,
+      item.alumno_id, fechaDestino, item.id
+    );
+    if (conflicto) {
+      throw new Error(`${item.alumno_nombre} ya tiene una clase cargada en la fecha elegida`);
+    }
+  }
+
+  for (const item of items) {
+    await db.runAsync(
+      `UPDATE agenda_alumnos
+       SET fecha = ?, tipo = 'manual', feriado_origen = ?,
+         feriado_tipo_origen = ?, motivo_movimiento = ? WHERE id = ?`,
+      fechaDestino, fechaOrigen, item.tipo, motivo, item.id
+    );
+    if (item.tipo === "regular") {
+      await db.runAsync(
+        `INSERT INTO agenda_alumnos
+         (alumno_id,grupo_id,fecha,tipo,estado,origen_agenda_id)
+         VALUES (?,?,?,'regular','cancelada',?)`,
+        item.alumno_id, item.grupo_id, fechaOrigen, item.id
+      );
+    }
+  }
+  return items.length;
+}
 
 export const agendaRepository = {
   async listarEntre(inicio: string, fin: string) {
@@ -207,31 +351,11 @@ export const agendaRepository = {
     motivo: TipoMovimientoClase
   ) {
     const db = await databasePromise;
-    const items = await db.getAllAsync<AgendaAlumno>(
-      "SELECT * FROM agenda_alumnos WHERE fecha = ? AND estado = 'programada'", fechaOrigen
-    );
+    let movidas = 0;
     await db.withTransactionAsync(async () => {
-      for (const item of items) {
-        const conflicto = await db.getFirstAsync<{ id: number }>(
-          "SELECT id FROM agenda_alumnos WHERE alumno_id = ? AND fecha = ?",
-          item.alumno_id, fechaDestino
-        );
-        if (conflicto) continue;
-        await db.runAsync(
-          `UPDATE agenda_alumnos
-           SET fecha = ?, tipo = 'manual', feriado_origen = ?,
-             feriado_tipo_origen = ?, motivo_movimiento = ? WHERE id = ?`,
-          fechaDestino, fechaOrigen, item.tipo, motivo, item.id
-        );
-        if (item.tipo === "regular") {
-          await db.runAsync(
-            `INSERT OR IGNORE INTO agenda_alumnos
-             (alumno_id,grupo_id,fecha,tipo,estado) VALUES (?,?,?,'regular','cancelada')`,
-            item.alumno_id, item.grupo_id, fechaOrigen
-          );
-        }
-      }
+      movidas = await moverAgendaDelDiaEnDb(db, fechaOrigen, fechaDestino, motivo);
     });
+    return movidas;
   },
 
   async agregarManual(alumnoId: number, grupoId: number, fecha: string) {
@@ -247,33 +371,12 @@ export const agendaRepository = {
 
   async quitar(agendaId: number) {
     const db = await databasePromise;
-    const item = await db.getFirstAsync<AgendaAlumno>(
+    const item = await db.getFirstAsync<AgendaCancelable>(
       "SELECT * FROM agenda_alumnos WHERE id = ?", agendaId
     );
     if (!item || item.estado === "cancelada") return;
     await db.withTransactionAsync(async () => {
-      await db.runAsync("UPDATE agenda_alumnos SET estado = 'cancelada' WHERE id = ?", agendaId);
-      if (item.tipo === "recuperacion" && item.estado === "programada") {
-        await revertirMovimientoAgenda(db, {
-          alumnoId: item.alumno_id,
-          agendaId: item.id,
-          tipoOriginal: "recuperacion",
-          deltaLegacy: 1,
-          contextoLegacy: "reversion_recuperacion",
-          fecha: item.fecha,
-        });
-        await db.runAsync(
-          `DELETE FROM clases WHERE alumno_id = ? AND grupo_id = ?
-            AND fecha = ? AND estado = 'recuperacion'`,
-          item.alumno_id, item.grupo_id, item.fecha
-        );
-      }
-      if (item.tipo === "manual" && item.origen_agenda_id) {
-        await db.runAsync(
-          "UPDATE agenda_alumnos SET estado = 'programada' WHERE id = ? AND estado = 'ausente'",
-          item.origen_agenda_id
-        );
-      }
+      await cancelarAgendaEnDb(db, item, "quitar_agenda");
     });
   },
 

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { grupoOcurreEnFecha } from "@/lib/grupos";
+import { etiquetaMovimientoClase } from "@/lib/movimientosClase";
 import { colors } from "@/lib/theme";
 import { calcularLugaresDisponibles } from "@/lib/vacantes";
 import type { AgendaAlumno, Feriado, Grupo } from "@/models";
@@ -78,8 +79,11 @@ export function CalendarioMes({
       <View style={styles.days}>
         {celdas.map((cell, index) => {
           const isToday = !!cell && cell.date === hoy;
-          const esFeriado = !!cell?.holiday && cell.holiday.tipo !== "compromiso";
-          const gruposDelDia = cell && !cell.holiday
+          const tipoMovimiento = cell?.holiday?.tipo;
+          const esFeriado = tipoMovimiento === "feriado";
+          const esCompromiso = tipoMovimiento === "compromiso";
+          const bloqueaDia = esFeriado || esCompromiso;
+          const gruposDelDia = cell && !bloqueaDia
             ? Array.from(new Set([
                 ...grupos
                   .filter(grupo => grupoOcurreEnFecha(grupo, cell.date))
@@ -89,7 +93,7 @@ export function CalendarioMes({
                 .map(id => grupos.find(grupo => grupo.id === id))
                 .filter((grupo): grupo is Grupo => !!grupo)
             : [];
-          const vacantes = !cell || cell.holiday || cell.date < hoy
+          const vacantes = !cell || bloqueaDia || cell.date < hoy
             ? 0
             : gruposDelDia.reduce((total, grupo) => {
                 const agendaGrupo = cell.entries.filter(item => item.grupo_id === grupo.id);
@@ -105,7 +109,9 @@ export function CalendarioMes({
               style={[
                 styles.day,
                 isToday && styles.today,
-                cell?.holiday && (esFeriado ? styles.holiday : styles.commitment),
+                cell?.holiday && (esFeriado
+                  ? styles.holiday
+                  : esCompromiso ? styles.commitment : styles.adjustment),
               ]}
             >
               {!!cell && <>
@@ -121,11 +127,13 @@ export function CalendarioMes({
                   isToday && styles.todayNumber,
                   cell.holiday && (esFeriado
                     ? styles.holidayNumber
-                    : styles.commitmentNumber),
+                    : esCompromiso ? styles.commitmentNumber : styles.adjustmentNumber),
                 ]}>{cell.day}</Text>
                 {!!cell.holiday && (
-                  <Text style={esFeriado ? styles.holidayLabel : styles.commitmentLabel}>
-                    {esFeriado ? "FERIADO" : "MOVIDA"}
+                  <Text style={esFeriado
+                    ? styles.holidayLabel
+                    : esCompromiso ? styles.commitmentLabel : styles.adjustmentLabel}>
+                    {etiquetaMovimientoClase(cell.holiday.tipo).toUpperCase()}
                   </Text>
                 )}
                 <View style={styles.marks}>
@@ -172,12 +180,15 @@ const styles = StyleSheet.create({
   today: { borderWidth: 2, borderColor: colors.primarySoft },
   holiday: { backgroundColor: "#FBE1DF", borderWidth: 1.5, borderColor: "#DC8E87" },
   commitment: { backgroundColor: colors.claySoft, borderWidth: 1.5, borderColor: "#D6A68E" },
+  adjustment: { backgroundColor: colors.primarySoft, borderWidth: 1.5, borderColor: "#78A99A" },
   dayNumber: { color: colors.ink, fontSize: 13, fontWeight: "700" },
   todayNumber: { color: colors.primary, fontWeight: "900" },
   holidayNumber: { color: colors.danger, fontWeight: "900" },
   holidayLabel: { marginTop: 3, color: colors.danger, fontSize: 6, fontWeight: "900", letterSpacing: .2 },
   commitmentNumber: { color: colors.clay, fontWeight: "900" },
   commitmentLabel: { marginTop: 3, color: colors.clay, fontSize: 6, fontWeight: "900", letterSpacing: .2 },
+  adjustmentNumber: { color: colors.primary, fontWeight: "900" },
+  adjustmentLabel: { marginTop: 3, color: colors.primary, fontSize: 6, fontWeight: "900", letterSpacing: .2 },
   marks: { width: "100%", gap: 2, marginTop: 6, alignItems: "center" },
   mark: { width: "88%", height: 12, borderRadius: 3, alignItems: "center", justifyContent: "center", transform: [{ rotate: "-2deg" }] },
   markText: { color: "white", fontSize: 8, fontWeight: "900" },

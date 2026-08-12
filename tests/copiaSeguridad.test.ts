@@ -3,6 +3,7 @@ import { beforeEach, describe, test } from "node:test";
 
 import { crearEsquema } from "../database/schema";
 import { ajustarSaldoPendientes } from "../database/pendientes";
+import { reajusteRepository } from "../repositories/reajusteRepository";
 import {
   compartirCopiaSeguridad,
   elegirCopiaSeguridad,
@@ -123,5 +124,76 @@ describe("copia y restauración de datos", () => {
     );
     assert.equal(alumno?.pendientes, 1);
     assert.deepEqual(movimiento, { delta: 1, tipo: "saldo_inicial" });
+  });
+
+  test("restaura una copia que contiene un reajuste", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      `UPDATE grupos SET frecuencia='quincenal',dia=5,fecha_inicio='2026-08-07'
+       WHERE id=1`
+    );
+    await db.runAsync(
+      "UPDATE agenda_alumnos SET estado = 'programada' WHERE id = 1"
+    );
+    await reajusteRepository.reajustar(1, "2026-08-07", "2026-08-14");
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync("DELETE FROM feriados");
+    await db.runAsync(
+      `UPDATE agenda_alumnos
+       SET motivo_movimiento = NULL, feriado_origen = NULL
+       WHERE id = 1`
+    );
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const reajuste = await db.getFirstAsync<{
+      tipo: string; fecha_recuperacion: string;
+    }>("SELECT tipo,fecha_recuperacion FROM feriados WHERE fecha = '2026-08-07'");
+    const agenda = await db.getFirstAsync<{
+      fecha: string; motivo_movimiento: string; feriado_origen: string;
+    }>("SELECT fecha,motivo_movimiento,feriado_origen FROM agenda_alumnos WHERE id = 1");
+    assert.deepEqual(reajuste, {
+      tipo: "reajuste",
+      fecha_recuperacion: "2026-08-14",
+    });
+    assert.deepEqual(agenda, {
+      fecha: "2026-08-14",
+      motivo_movimiento: "reajuste",
+      feriado_origen: "2026-08-07",
+    });
+    const historial = await db.getFirstAsync<{ fecha_inicio_nueva: string }>(
+      "SELECT fecha_inicio_nueva FROM reajustes_grupo WHERE fecha_origen='2026-08-07'"
+    );
+    assert.equal(historial?.fecha_inicio_nueva, "2026-08-14");
+  });
+
+  test("acepta una copia anterior de formato 2 sin historial de reajustes", async () => {
+    await compartirCopiaSeguridad();
+    const uriActual = ultimoArchivoCompartido();
+    assert.ok(uriActual);
+    const contenido = JSON.parse(await new File(uriActual).text()) as {
+      versionFormato: number;
+      tablas: Record<string, unknown>;
+    };
+    contenido.versionFormato = 2;
+    delete contenido.tablas.reajustes_grupo;
+    const archivoAnterior = new File("memory://cache/respaldo-v2.json");
+    archivoAnterior.create();
+    archivoAnterior.write(JSON.stringify(contenido));
+
+    elegirDocumentoPrueba(archivoAnterior.uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+    const db = await databasePromise;
+    const historiales = await db.getFirstAsync<{ total: number }>(
+      "SELECT COUNT(*) AS total FROM reajustes_grupo"
+    );
+    assert.equal(historiales?.total, 0);
   });
 });

@@ -221,6 +221,7 @@ export default function HoyScreen() {
                     <Text style={[
                       styles.holidayRecovery,
                       claseMovida.motivo_movimiento === "compromiso" && styles.commitmentRecovery,
+                      claseMovida.motivo_movimiento === "reajuste" && styles.adjustmentRecovery,
                     ]}>
                       {etiquetaRecuperacion(
                         claseMovida.motivo_movimiento,
@@ -475,6 +476,7 @@ const styles = StyleSheet.create({
   time: { color: colors.clay, fontSize: 12, fontWeight: "900", marginBottom: 4 },
   holidayRecovery: { color: colors.danger, fontSize: 11, fontWeight: "900", marginTop: 3, marginBottom: 2 },
   commitmentRecovery: { color: colors.clay },
+  adjustmentRecovery: { color: colors.primary },
   releasedPlaces: { color: colors.success, fontSize: 12, fontWeight: "800", marginTop: 4 },
   availabilityChip: { maxWidth: 112, minHeight: 42, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, elevation: 2, shadowColor: "#000", shadowOpacity: .12, shadowRadius: 3, shadowOffset: { width: 0, height: 2 } },
   availabilityText: { flexShrink: 1, color: "white", fontSize: 9, lineHeight: 12, fontWeight: "900", textAlign: "center" },

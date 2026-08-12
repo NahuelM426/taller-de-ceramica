@@ -167,7 +167,7 @@ export function GrupoFormModal({
       <Text style={styles.formLabel}>Frecuencia del grupo</Text>
       <View style={styles.needChoices}>
         <Choice label="Todas las semanas" selected={frecuencia === "semanal"} onPress={() => setFrecuencia("semanal")} />
-        <Choice label="Cada 15 días" selected={frecuencia === "quincenal"} onPress={() => setFrecuencia("quincenal")} />
+        <Choice label="2 veces por mes" selected={frecuencia === "quincenal"} onPress={() => setFrecuencia("quincenal")} />
       </View>
       <Pressable onPress={() => setSelectorFechaVisible(true)} style={styles.datePickerButton}>
         <View style={styles.datePickerIcon}>
@@ -179,7 +179,7 @@ export function GrupoFormModal({
           </Text>
           <Text style={styles.datePickerText}>
             {frecuencia === "quincenal"
-              ? "Define las semanas alternadas a partir de esta fecha"
+              ? "Define si usa la 1.ª y 3.ª semana o la 2.ª y 4.ª"
               : "El grupo comenzará desde esta fecha"}
           </Text>
         </View>
@@ -230,7 +230,7 @@ export function GrupoFormModal({
         primeraClase !== grupo.fecha_inicio
       ) && (
         <Text style={styles.dateWarning}>
-          Cambiar el día o el turno quincenal rearma las próximas clases habituales. Las fechas que acomodaste manualmente se conservan.
+          Cambiar el día o el turno mensual rearma las próximas clases habituales. Las fechas que acomodaste manualmente se conservan.
         </Text>
       )}
       {!!grupo && (

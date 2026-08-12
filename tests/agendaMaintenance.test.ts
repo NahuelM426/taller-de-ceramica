@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, test } from "node:test";
 
-import { generarAgendaHasta } from "../database/agendaMaintenance";
+import {
+  generarAgendaHasta,
+  reajustarAgendaDosClasesPorMes,
+} from "../database/agendaMaintenance";
 import { crearEsquema, crearIndices, migrarColumnas } from "../database/schema";
 import {
   databasePromise,
@@ -90,5 +93,40 @@ describe("índices SQLite", () => {
     assert.equal(nombres.has("idx_agenda_alumno_tipo_fecha_estado"), true);
     assert.equal(nombres.has("idx_movimientos_alumno_id"), true);
     assert.equal(nombres.has("idx_movimientos_agenda_tipo_id"), true);
+  });
+});
+
+describe("reajuste a dos clases por mes", () => {
+  test("cancela terceras clases guardadas y conserva movimientos manuales", async () => {
+    await reiniciarBasePrueba();
+    const db = await databasePromise;
+    await crearEsquema(db as unknown as Parameters<typeof crearEsquema>[0]);
+    await db.runAsync(
+      `INSERT INTO grupos
+       (id,nombre,dia,hora,capacidad,color,frecuencia,fecha_inicio)
+       VALUES (1,'Martes',2,'18:00',4,'#315B50','quincenal','2026-09-01')`
+    );
+    await db.runAsync(
+      `INSERT INTO alumnos
+       (id,nombre,frecuencia,grupo_id,fecha_inicio)
+       VALUES (1,'Ana','quincenal',1,'2026-09-01')`
+    );
+    await db.runAsync(
+      `INSERT INTO agenda_alumnos (alumno_id,grupo_id,fecha,tipo,estado)
+       VALUES (1,1,'2026-09-29','regular','programada'),
+              (1,1,'2026-10-13','manual','programada')`
+    );
+
+    assert.equal(await reajustarAgendaDosClasesPorMes(
+      db as unknown as Parameters<typeof reajustarAgendaDosClasesPorMes>[0],
+      "2026-09-01"
+    ), 1);
+    const filas = await db.getAllAsync<{ fecha: string; estado: string }>(
+      "SELECT fecha,estado FROM agenda_alumnos ORDER BY fecha"
+    );
+    assert.deepEqual(filas, [
+      { fecha: "2026-09-29", estado: "cancelada" },
+      { fecha: "2026-10-13", estado: "programada" },
+    ]);
   });
 });

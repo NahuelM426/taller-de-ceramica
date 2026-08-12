@@ -115,3 +115,78 @@ No se generó ni publicó una versión de producción como parte de este cambio.
 - La consulta del AAB terminado se ejecuta nuevamente desde el repositorio real
   y con el entorno restaurado, evitando que los avisos del modo sin VCS
   contaminen la respuesta JSON de Expo.
+
+### Reajuste del patrón mensual
+
+- El calendario permite elegir `Reajuste` junto a feriado y compromiso, usando
+  el mismo selector de fecha y una confirmación específica.
+- A diferencia de los otros motivos, el reajuste cambia desde la fecha elegida
+  el turno habitual completo del grupo: primera/tercera o segunda/cuarta semana.
+  Por ejemplo, `1/15 → 8/22` continúa como `13/27` el mes siguiente.
+- La fecha elegida debe coincidir con el día de la semana del grupo y la función
+  solo está disponible para grupos de dos clases por mes.
+- El tipo `reajuste` tiene etiquetas y colores propios en el mes, el detalle del
+  día y la agenda de próximas clases.
+- El cambio de patrón, la regeneración de la agenda y su historial se guardan en
+  una sola transacción. Si un alumno tiene un conflicto no se aplica ningún
+  cambio parcial y se informa el problema.
+- Al reajustar o deshacer se conservan modelos, materiales, recuperaciones y
+  movimientos manuales; tampoco se generan ausencias ni clases pendientes.
+- La tabla `reajustes_grupo` permite restaurar el patrón anterior de forma
+  segura. Si hubo un cambio posterior incompatible, el deshacer se cancela sin
+  modificar la agenda.
+- La tabla `feriados` se migra de forma transaccional para aceptar el nuevo tipo
+  sin perder feriados ni compromisos existentes.
+- Las copias usan el formato 3 para incluir el historial, y siguen aceptando los
+  formatos 1 y 2 anteriores.
+- Las pruebas cubren ambos turnos mensuales, continuidad, reversión, conflictos,
+  pendientes, datos asignados, migración SQLite y copia/restauración.
+
+### Reajustes con filas canceladas
+
+- `Reajuste` diferencia una clase activa de una fila cancelada invisible. Las
+  canceladas que ocupan una nueva fecha se archivan dentro de la transacción,
+  conservando su identificador, referencias e historial.
+- Al deshacer el reajuste, esas filas canceladas recuperan su fecha original. Un
+  conflicto activo real continúa cancelando toda la operación.
+
+### Confirmación visible de Reajuste
+
+- `Reajuste` continúa apareciendo junto a `Feriado` y `Compromiso`, sin nuevas
+  condiciones ni filtros.
+- Después de elegir la nueva fecha se guarda temporalmente la operación y se
+  mantiene oculto el detalle del día mientras se muestra una confirmación propia.
+- Cancelar vuelve al detalle original sin aplicar cambios. Confirmar reutiliza la
+  operación de reajuste existente, reprograma notificaciones y recarga el mes.
+- Durante el guardado los botones quedan deshabilitados y un bloqueo inmediato
+  evita ejecutar dos veces el reajuste por un doble toque.
+- Ante un error la confirmación permanece abierta y permite reintentar o cancelar.
+
+### Calendario mensual compartible
+
+- La cabecera del calendario incorpora un botón para generar un PNG del mes
+  visible y compartirlo con el menú nativo de Android, incluido WhatsApp.
+- La imagen utiliza un componente separado y solamente recibe grupos activos:
+  no contiene alumnos, vacantes, modelos, movimientos, ausencias ni controles.
+- Las fechas se calculan con la regla habitual del grupo. Los semanales aparecen
+  cada semana y los de dos veces por mes respetan el turno actualmente guardado,
+  omitiendo la quinta aparición.
+- La vista previa adapta la altura de las celdas a meses de cuatro, cinco o seis
+  filas, admite varias cintas por día y agrega una leyenda de colores.
+- El diseño compartible incluye el logo del taller, compacta la grilla mensual
+  y destaca con mayor tamaño la leyenda de grupos, días y horarios.
+- El archivo se crea temporalmente con un nombre como
+  `calendario-septiembre-2026.png`, sin solicitar acceso a fotos o almacenamiento.
+- Abrir la vista previa no inicia el menú externo. Compartir requiere tocar el
+  botón y solo se habilita después del layout y de que el logo termine de cargar.
+- La altura de todas las fechas crece según el día con más grupos, de modo que
+  ninguna cinta se omite, se superpone o invade la fila siguiente.
+
+### Selector de motivo de movimiento
+
+- Se reemplazó la pregunta nativa de Android por una ventana propia con las
+  opciones Feriado, Compromiso y Reajuste en vertical.
+- La ventana se puede cerrar sin elegir mediante la X, el botón Volver, el fondo
+  oscuro o el botón Atrás de Android.
+- Al elegir un motivo se abre el selector de fecha existente. No se modificaron
+  repositorios ni reglas de fechas, pendientes o movimientos.

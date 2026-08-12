@@ -4,7 +4,7 @@ import { fechaDentroDe, fechaLocal } from "./dates";
 import { grupoOcurreEnFecha } from "@/lib/grupos";
 import { cancelarPendientesPorAusenciasFuturas } from "./pendientes";
 
-async function generarAgendaConDb(
+export async function generarAgendaConDb(
   db: Database,
   alumnoId: number,
   grupo: Grupo,
@@ -82,6 +82,38 @@ export async function rearmarAgendaRegularGrupo(db: Database, grupoId: number) {
     );
     await generarAgendaConDb(db, alumno.id, grupo, desde, fechaDentroDe(370));
   }
+}
+
+export async function reajustarAgendaDosClasesPorMes(
+  db: Database,
+  desde = fechaLocal()
+) {
+  const filas = await db.getAllAsync<{
+    id: number;
+    fecha: string;
+    dia: number;
+    frecuencia: "quincenal";
+    fecha_inicio: string | null;
+  }>(`
+    SELECT ag.id, ag.fecha, g.dia, g.frecuencia, g.fecha_inicio
+    FROM agenda_alumnos ag
+    JOIN alumnos a ON a.id = ag.alumno_id
+    JOIN grupos g ON g.id = ag.grupo_id
+    WHERE ag.fecha >= ? AND ag.tipo = 'regular' AND ag.estado = 'programada'
+      AND g.frecuencia = 'quincenal' AND g.activo = 1
+      AND a.activo = 1 AND a.sin_grupo = 0 AND a.grupo_id = g.id
+    ORDER BY ag.fecha, ag.id
+  `, desde);
+  let canceladas = 0;
+  for (const fila of filas) {
+    if (grupoOcurreEnFecha(fila, fila.fecha)) continue;
+    const resultado = await db.runAsync(
+      "UPDATE agenda_alumnos SET estado = 'cancelada' WHERE id = ? AND estado = 'programada'",
+      fila.id
+    );
+    canceladas += resultado.changes;
+  }
+  return canceladas;
 }
 
 export async function completarAgendaInicial() {

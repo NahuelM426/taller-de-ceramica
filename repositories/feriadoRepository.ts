@@ -1,6 +1,10 @@
 import { AgendaAlumno, Feriado, TipoAgenda, TipoMovimientoClase } from "@/models";
 import { databasePromise } from "@/database/connection";
 import { revertirMovimientoAgenda } from "@/database/pendientes";
+import { motivoMovimientoClase } from "@/lib/movimientosClase";
+import { moverAgendaDelDiaEnDb } from "./agendaRepository";
+
+type TipoMovimientoAislado = Exclude<TipoMovimientoClase, "reajuste">;
 
 export const feriadoRepository = {
   async listar(inicio: string, fin: string) {
@@ -25,17 +29,38 @@ export const feriadoRepository = {
       fecha, motivo.trim() || "Clase movida", fechaRecuperacion, tipo
     );
   },
+  async mover(
+    fecha: string,
+    fechaRecuperacion: string,
+    tipo: TipoMovimientoAislado
+  ) {
+    const db = await databasePromise;
+    let movidas = 0;
+    await db.withTransactionAsync(async () => {
+      movidas = await moverAgendaDelDiaEnDb(db, fecha, fechaRecuperacion, tipo);
+      await db.runAsync(
+        `INSERT INTO feriados (fecha,motivo,fecha_recuperacion,tipo) VALUES (?,?,?,?)
+         ON CONFLICT(fecha) DO UPDATE SET
+           motivo = excluded.motivo,
+           fecha_recuperacion = excluded.fecha_recuperacion,
+           tipo = excluded.tipo`,
+        fecha, motivoMovimientoClase(tipo), fechaRecuperacion, tipo
+      );
+    });
+    return movidas;
+  },
   async quitar(fecha: string) {
     const db = await databasePromise;
-    const movidas = await db.getAllAsync<AgendaAlumno & { alumno_nombre: string }>(
-      `SELECT ag.*, a.nombre AS alumno_nombre
-       FROM agenda_alumnos ag
-       JOIN alumnos a ON a.id = ag.alumno_id
-       WHERE ag.feriado_origen = ?
-       ORDER BY ag.id`,
-      fecha
-    );
+    let movidas: Array<AgendaAlumno & { alumno_nombre: string }> = [];
     await db.withTransactionAsync(async () => {
+      movidas = await db.getAllAsync<AgendaAlumno & { alumno_nombre: string }>(
+        `SELECT ag.*, a.nombre AS alumno_nombre
+         FROM agenda_alumnos ag
+         JOIN alumnos a ON a.id = ag.alumno_id
+         WHERE ag.feriado_origen = ?
+         ORDER BY ag.id`,
+        fecha
+      );
       for (const movida of movidas) {
         const ausencia = await db.getFirstAsync<{ id: number }>(
           `SELECT id FROM clases
@@ -59,6 +84,17 @@ export const feriadoRepository = {
           });
         }
 
+        let tipoOriginal: TipoAgenda = movida.feriado_tipo_origen || "manual";
+        const marcador = await db.getFirstAsync<{ id: number }>(
+          `SELECT id FROM agenda_alumnos
+           WHERE alumno_id = ? AND fecha = ? AND id != ?
+             AND tipo = 'regular' AND estado = 'cancelada'
+             AND origen_agenda_id = ?`,
+          movida.alumno_id, fecha, movida.id, movida.id
+        );
+        if (marcador) {
+          await db.runAsync("DELETE FROM agenda_alumnos WHERE id = ?", marcador.id);
+        }
         const conflicto = await db.getFirstAsync<{
           id: number; tipo: TipoAgenda; estado: AgendaAlumno["estado"];
         }>(
@@ -66,9 +102,10 @@ export const feriadoRepository = {
            WHERE alumno_id = ? AND fecha = ? AND id != ?`,
           movida.alumno_id, fecha, movida.id
         );
-        let tipoOriginal: TipoAgenda = movida.feriado_tipo_origen || "manual";
         if (conflicto) {
-          if (conflicto.estado !== "cancelada") {
+          const esMarcadorLegacy = tipoOriginal === "regular" &&
+            conflicto.tipo === "regular" && conflicto.estado === "cancelada";
+          if (!esMarcadorLegacy) {
             throw new Error(
               `${movida.alumno_nombre} ya tiene otra clase cargada en la fecha original`
             );
@@ -98,4 +135,9 @@ export const guardarFeriado = (
   fechaRecuperacion: string,
   tipo: TipoMovimientoClase
 ) => feriadoRepository.guardar(fecha, motivo, fechaRecuperacion, tipo);
+export const moverClaseCompleta = (
+  fecha: string,
+  fechaRecuperacion: string,
+  tipo: TipoMovimientoAislado
+) => feriadoRepository.mover(fecha, fechaRecuperacion, tipo);
 export const quitarFeriado = (fecha: string) => feriadoRepository.quitar(fecha);

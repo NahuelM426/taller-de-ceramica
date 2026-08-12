@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 import { FormModal } from "@/components/ui";
-import { etiquetaRecuperacion } from "@/lib/movimientosClase";
+import { etiquetaMovimientoClase, etiquetaRecuperacion } from "@/lib/movimientosClase";
 import { colors } from "@/lib/theme";
 import type { AgendaAlumno, Feriado } from "@/models";
 
@@ -53,14 +53,21 @@ export function DetalleDiaModal({
       <View style={[
         styles.daySummary,
         feriado && {
-          backgroundColor: feriado.tipo === "compromiso" ? colors.claySoft : "#FFF0EF",
+          backgroundColor: feriado.tipo === "compromiso"
+            ? colors.claySoft
+            : feriado.tipo === "reajuste" ? colors.primarySoft : "#FFF0EF",
         },
       ]}>
         <Text style={styles.daySummaryTitle}>{fecha}</Text>
+        {!!feriado && (
+          <Text style={styles.movementType}>{etiquetaMovimientoClase(feriado.tipo)}</Text>
+        )}
         <Text style={styles.daySummaryText}>
           {feriado
             ? `${feriado.motivo}${feriado.fecha_recuperacion
-                ? ` · Recuperan el ${feriado.fecha_recuperacion.slice(8, 10)}/${feriado.fecha_recuperacion.slice(5, 7)}/${feriado.fecha_recuperacion.slice(0, 4)}`
+                ? feriado.tipo === "reajuste"
+                  ? ` · Nuevo patrón desde el ${feriado.fecha_recuperacion.slice(8, 10)}/${feriado.fecha_recuperacion.slice(5, 7)}/${feriado.fecha_recuperacion.slice(0, 4)}`
+                  : ` · Recuperan el ${feriado.fecha_recuperacion.slice(8, 10)}/${feriado.fecha_recuperacion.slice(5, 7)}/${feriado.fecha_recuperacion.slice(0, 4)}`
                 : ""}`
             : `${personas.length} persona${personas.length === 1 ? "" : "s"} programada${personas.length === 1 ? "" : "s"}`}
         </Text>
@@ -183,7 +190,7 @@ export function DetalleDiaModal({
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.datePickerTitle}>Mover esta clase</Text>
-            <Text style={styles.datePickerText}>Elegir motivo y fecha de recuperación</Text>
+            <Text style={styles.datePickerText}>Elegir motivo y nueva fecha</Text>
           </View>
           <Ionicons name="chevron-forward" size={19} color={colors.clay} />
         </Pressable>
@@ -200,6 +207,7 @@ const styles = StyleSheet.create({
   daySummary: { padding: 15, borderRadius: 14, backgroundColor: colors.primarySoft },
   daySummaryTitle: { color: colors.ink, fontSize: 19, fontWeight: "900" },
   daySummaryText: { color: colors.muted, fontSize: 12, marginTop: 4 },
+  movementType: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: .7, marginTop: 4, textTransform: "uppercase" },
   addGroupInSummary: { minHeight: 42, marginTop: 14, borderRadius: 11, backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
   addGroupInSummaryText: { color: "white", fontSize: 12, fontWeight: "900" },
   sectionTitle: { color: colors.muted, fontSize: 11, fontWeight: "900", letterSpacing: .8, marginTop: 4 },

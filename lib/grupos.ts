@@ -1,4 +1,4 @@
-import { FrecuenciaGrupo, Grupo } from "@/models";
+import { Grupo } from "@/models";
 
 const DIA_MS = 86_400_000;
 
@@ -6,17 +6,26 @@ function fechaMediodia(fecha: string) {
   return new Date(`${fecha}T12:00:00`);
 }
 
-export function intervaloGrupo(frecuencia: FrecuenciaGrupo) {
-  return frecuencia === "quincenal" ? 14 : 7;
+function aparicionDelDiaEnElMes(fecha: Date) {
+  return Math.floor((fecha.getDate() - 1) / 7) + 1;
 }
 
-export function grupoOcurreEnFecha(grupo: Grupo, fecha: string) {
+export function grupoOcurreEnFecha(
+  grupo: Pick<Grupo, "dia" | "frecuencia" | "fecha_inicio">,
+  fecha: string
+) {
   const dia = fechaMediodia(fecha);
   if (dia.getDay() !== grupo.dia) return false;
   if (!grupo.fecha_inicio) return true;
   const inicio = fechaMediodia(grupo.fecha_inicio);
   const diferencia = Math.round((dia.getTime() - inicio.getTime()) / DIA_MS);
-  return diferencia >= 0 && diferencia % intervaloGrupo(grupo.frecuencia) === 0;
+  if (diferencia < 0) return false;
+  if (grupo.frecuencia === "semanal") return diferencia % 7 === 0;
+  if (fecha === grupo.fecha_inicio) return true;
+
+  const turnoInicial = aparicionDelDiaEnElMes(inicio) % 2;
+  const aparicion = aparicionDelDiaEnElMes(dia);
+  return aparicion <= 4 && aparicion % 2 === turnoInicial;
 }
 
 export function siguienteFechaDelGrupo(grupo: Grupo, desde: string) {
@@ -33,6 +42,6 @@ export function textoFrecuenciaGrupo(grupo: Pick<Grupo, "frecuencia" | "fecha_in
   if (grupo.frecuencia === "semanal") return "Todas las semanas";
   const inicio = grupo.fecha_inicio;
   return inicio
-    ? `Cada 15 días · turno desde ${inicio.slice(8, 10)}/${inicio.slice(5, 7)}`
-    : "Cada 15 días";
+    ? `2 veces por mes · turno desde ${inicio.slice(8, 10)}/${inicio.slice(5, 7)}`
+    : "2 veces por mes";
 }

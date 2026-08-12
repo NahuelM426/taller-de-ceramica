@@ -7,3 +7,4 @@ export * from "./modeloRepository";
 export * from "./moldeRepository";
 export * from "./notificacionRepository";
 export * from "./preferenciaRepository";
+export * from "./reajusteRepository";

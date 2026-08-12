@@ -1,9 +1,15 @@
 import "./agendaRepository.test";
 import "./agendaMaintenance.test";
 import "./calendario.test";
+import "./calendarioCompartible.test";
 import "./cambiosGrupo.test";
 import "./copiaSeguridad.test";
 import "./feriados.test";
+import "./flujoReajuste.test";
 import "./grupos.test";
+import "./retiroLimpieza.test";
+import "./migracionMovimientosClase.test";
 import "./pendientes.test";
+import "./reajustesGrupo.test";
+import "./seleccionMotivoMovimiento.test";
 import "./vacantes.test";

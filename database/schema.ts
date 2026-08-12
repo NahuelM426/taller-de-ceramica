@@ -68,7 +68,21 @@ export async function crearEsquema(db: Database) {
       fecha TEXT PRIMARY KEY, motivo TEXT NOT NULL DEFAULT 'Feriado',
       fecha_recuperacion TEXT,
       tipo TEXT NOT NULL DEFAULT 'feriado'
-        CHECK(tipo IN ('feriado','compromiso'))
+        CHECK(tipo IN ('feriado','compromiso','reajuste'))
+    );
+    CREATE TABLE IF NOT EXISTS reajustes_grupo (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      grupo_id INTEGER NOT NULL,
+      fecha_origen TEXT NOT NULL,
+      fecha_destino TEXT NOT NULL,
+      fecha_inicio_anterior TEXT,
+      fecha_inicio_nueva TEXT NOT NULL,
+      fecha_hasta TEXT NOT NULL,
+      agenda_anterior TEXT NOT NULL,
+      agenda_generada TEXT NOT NULL DEFAULT '[]',
+      creado_en TEXT NOT NULL,
+      deshecho_en TEXT,
+      FOREIGN KEY (grupo_id) REFERENCES grupos(id)
     );
     CREATE TABLE IF NOT EXISTS modelos (
       id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL,
@@ -77,6 +91,30 @@ export async function crearEsquema(db: Database) {
     );
     CREATE TABLE IF NOT EXISTS app_meta (clave TEXT PRIMARY KEY, valor TEXT);
   `);
+}
+
+export async function migrarTiposMovimientoClase(db: Database) {
+  const tabla = await db.getFirstAsync<{ sql: string | null }>(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'feriados'"
+  );
+  if (tabla?.sql?.includes("'reajuste'")) return;
+
+  await db.withTransactionAsync(async () => {
+    await db.execAsync(`
+      DROP TABLE IF EXISTS feriados_con_reajuste;
+      CREATE TABLE feriados_con_reajuste (
+        fecha TEXT PRIMARY KEY,
+        motivo TEXT NOT NULL DEFAULT 'Feriado',
+        fecha_recuperacion TEXT,
+        tipo TEXT NOT NULL DEFAULT 'feriado'
+          CHECK(tipo IN ('feriado','compromiso','reajuste'))
+      );
+      INSERT INTO feriados_con_reajuste (fecha,motivo,fecha_recuperacion,tipo)
+        SELECT fecha,motivo,fecha_recuperacion,tipo FROM feriados;
+      DROP TABLE feriados;
+      ALTER TABLE feriados_con_reajuste RENAME TO feriados;
+    `);
+  });
 }
 
 export async function migrarColumnas(db: Database) {
@@ -107,6 +145,7 @@ export async function migrarColumnas(db: Database) {
   if (!feriados.some(item => item.name === "tipo")) {
     await db.execAsync("ALTER TABLE feriados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'feriado'");
   }
+  await migrarTiposMovimientoClase(db);
   const modelos = await db.getAllAsync<{ name: string }>("PRAGMA table_info(modelos)");
   const columnasModelo: Array<[string, string]> = [
     ["tipo_arcilla", "TEXT"], ["imagen_1", "TEXT"],
@@ -182,5 +221,7 @@ export async function crearIndices(db: Database) {
       ON alumnos(grupo_id, activo, sin_grupo);
     CREATE INDEX IF NOT EXISTS idx_grupos_activos_dia_hora
       ON grupos(activo, dia, hora);
+    CREATE INDEX IF NOT EXISTS idx_reajustes_grupo_activo
+      ON reajustes_grupo(grupo_id, deshecho_en, id);
   `);
 }

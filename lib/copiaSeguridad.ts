@@ -9,7 +9,7 @@ type ValorSql = string | number | null;
 type FilaCopia = Record<string, ValorSql>;
 
 const FORMATO = "taller-de-ceramica";
-const VERSION_FORMATO = 2;
+const VERSION_FORMATO = 3;
 const ARCHIVO_EMERGENCIA = "taller-ceramica-antes-de-restaurar.json";
 const LIMITE_ARCHIVO = 100 * 1024 * 1024;
 
@@ -53,6 +53,14 @@ const tablas = [
     ],
   },
   { nombre: "feriados", columnas: ["fecha", "motivo", "fecha_recuperacion", "tipo"] },
+  {
+    nombre: "reajustes_grupo",
+    columnas: [
+      "id", "grupo_id", "fecha_origen", "fecha_destino", "fecha_inicio_anterior",
+      "fecha_inicio_nueva", "fecha_hasta", "agenda_anterior", "agenda_generada",
+      "creado_en", "deshecho_en",
+    ],
+  },
   { nombre: "app_meta", columnas: ["clave", "valor"] },
 ] as const;
 
@@ -105,7 +113,7 @@ function validarCopia(valor: unknown): CopiaSeguridad {
     throw new Error("El archivo no pertenece a Taller de Cerámica.");
   }
   const versionRecibida = candidata.versionFormato;
-  if (versionRecibida !== 1 && versionRecibida !== VERSION_FORMATO) {
+  if (versionRecibida !== 1 && versionRecibida !== 2 && versionRecibida !== VERSION_FORMATO) {
     throw new Error("La versión de esta copia todavía no es compatible.");
   }
   if (typeof candidata.creadaEn !== "string" || !candidata.tablas ||
@@ -121,6 +129,10 @@ function validarCopia(valor: unknown): CopiaSeguridad {
     let filas = tablasRecibidas[tabla.nombre];
     if (!Array.isArray(filas) && versionRecibida === 1 &&
         tabla.nombre === "movimientos_pendientes") {
+      filas = [];
+    }
+    if (!Array.isArray(filas) && versionRecibida < 3 &&
+        tabla.nombre === "reajustes_grupo") {
       filas = [];
     }
     if (!Array.isArray(filas)) throw new Error(`Falta la información de ${tabla.nombre}.`);

@@ -35,9 +35,13 @@ en `docs/google-play/` y `play-store/`.
 
 ## Funciones incluidas
 
-- Personas con frecuencia semanal o cada 15 días.
+- Personas con frecuencia semanal o dos clases por mes.
 - Grupos creados desde la vista mensual, por día, horario y cantidad de lugares.
 - Edición de nombre, día, horario y capacidad de cada grupo.
+- Movimiento aislado de una clase por feriado o compromiso, con posibilidad de
+  deshacerlo.
+- Reajuste del patrón futuro de grupos de dos clases por mes, con historial y
+  restauración segura del turno anterior.
 - Recordatorios locales configurables por días y horas de anticipación.
 - Cada aviso incluye quiénes vienen y las cantidades de modelos a preparar.
 - Agenda individual generada desde una fecha inicial.

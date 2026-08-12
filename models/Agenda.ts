@@ -1,3 +1,5 @@
+import type { TipoMovimientoClase } from "./Feriado";
+
 export type TipoAgenda = "regular" | "recuperacion" | "manual";
 export type EstadoAgenda = "programada" | "presente" | "ausente" | "cancelada";
 
@@ -21,5 +23,5 @@ export interface AgendaAlumno {
   origen_agenda_id?: number | null;
   feriado_origen?: string | null;
   feriado_tipo_origen?: TipoAgenda | null;
-  motivo_movimiento?: "feriado" | "compromiso" | null;
+  motivo_movimiento?: TipoMovimientoClase | null;
 }

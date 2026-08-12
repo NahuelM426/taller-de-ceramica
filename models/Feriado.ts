@@ -1,4 +1,4 @@
-export type TipoMovimientoClase = "feriado" | "compromiso";
+export type TipoMovimientoClase = "feriado" | "compromiso" | "reajuste";
 
 export interface Feriado {
   fecha: string;

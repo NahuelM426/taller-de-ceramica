@@ -220,7 +220,7 @@ export default function AlumnosScreen() {
                     {alumno.sin_grupo ? "Sin grupo habitual" : alumno.grupo_nombre}
                   </Text>
                   {!alumno.sin_grupo && (
-                    <Text style={styles.frequency}>· {alumno.frecuencia === "semanal" ? "Semanal" : "Cada 15 días"}</Text>
+                    <Text style={styles.frequency}>· {alumno.frecuencia === "semanal" ? "Semanal" : "2 veces por mes"}</Text>
                   )}
                 </View>
               </View>

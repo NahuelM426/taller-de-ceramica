@@ -1,5 +1,9 @@
 import { AgendaAlumno } from "@/models";
-import { acomodarAgendaRegularAlDia, buscarAusenciaSinCubrir } from "./agendaMaintenance";
+import {
+  acomodarAgendaRegularAlDia,
+  buscarAusenciaSinCubrir,
+  reajustarAgendaDosClasesPorMes,
+} from "./agendaMaintenance";
 import { databasePromise, Database } from "./connection";
 import { fechaLocal } from "./dates";
 import { migrarSaldoInicialPendientes } from "./pendientes";
@@ -123,4 +127,7 @@ export async function ejecutarMigracionesDeDatos() {
   await reasignarMovimientos(db, false);
   await ejecutarUnaVez(db, "coberturas_vinculadas_v4", () => vincularCoberturas(db));
   await ejecutarUnaVez(db, "libro_pendientes_v1", () => migrarSaldoInicialPendientes(db));
+  await ejecutarUnaVez(db, "agenda_dos_clases_por_mes_v5", async () => {
+    await reajustarAgendaDosClasesPorMes(db);
+  });
 }

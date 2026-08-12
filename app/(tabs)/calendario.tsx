@@ -7,21 +7,39 @@ import { AgregarPersonaModal } from "@/components/agenda/AgregarPersonaModal";
 import { CalendarioFechaModal } from "@/components/agenda/CalendarioFechaModal";
 import { ModeloPersonaModal } from "@/components/agenda/ModeloPersonaModal";
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
+import { CompartirCalendarioModal } from "@/components/calendario/CompartirCalendarioModal";
+import { ConfirmarReajusteModal } from "@/components/calendario/ConfirmarReajusteModal";
 import { DetalleDiaModal } from "@/components/calendario/DetalleDiaModal";
 import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
+import { SeleccionarMotivoMovimientoModal } from "@/components/calendario/SeleccionarMotivoMovimientoModal";
 import { useCalendarioData } from "@/hooks/useCalendarioData";
 import {
   asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
-  moverAgendaDelDia, quitarFechaAgenda, registrarAusencia, revertirAusencia,
+  quitarFechaAgenda, registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
 import { fijarAlumnoEnGrupo } from "@/repositories/alumnoRepository";
-import { guardarFeriado, quitarFeriado } from "@/repositories/feriadoRepository";
+import {
+  moverClaseCompleta as moverClaseCompletaEnRepositorio,
+  quitarFeriado,
+} from "@/repositories/feriadoRepository";
+import { deshacerReajuste, reajustarGrupo } from "@/repositories/reajusteRepository";
 import { colors, groupColors } from "@/lib/theme";
 import { textoHorarioAviso } from "@/lib/horarios";
 import { notificacionesDisponibles, reprogramarNotificaciones } from "@/lib/notifications";
 import { TipoOcupacion } from "@/lib/seleccionAgenda";
 import { textoFrecuenciaGrupo } from "@/lib/grupos";
-import { motivoMovimientoClase } from "@/lib/movimientosClase";
+import {
+  cancelarConfirmacionReajuste,
+  detalleDiaDebeEstarVisible,
+  ejecutarReajusteUnaVez,
+  prepararConfirmacionReajuste,
+  type ReajustePendiente,
+} from "@/lib/flujoReajuste";
+import {
+  abrirSeleccionMotivo,
+  cancelarSeleccionMotivo,
+  confirmarSeleccionMotivo,
+} from "@/lib/seleccionMotivoMovimiento";
 import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
 
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -63,10 +81,15 @@ export default function CalendarioScreen() {
   const [guardandoAsistencia, setGuardandoAsistencia] = useState<number | null>(null);
   const [selectorAlumnoVisible, setSelectorAlumnoVisible] = useState(false);
   const [selectorFechaVisible, setSelectorFechaVisible] = useState(false);
+  const [selectorMotivoVisible, setSelectorMotivoVisible] = useState(false);
   const [motivoMovimiento, setMotivoMovimiento] = useState<TipoMovimientoClase | null>(null);
   const [selectorModeloVisible, setSelectorModeloVisible] = useState(false);
   const [editAgenda, setEditAgenda] = useState<AgendaAlumno | null>(null);
-
+  const [reajustePendiente, setReajustePendiente] = useState<ReajustePendiente | null>(null);
+  const [guardandoReajuste, setGuardandoReajuste] = useState(false);
+  const [errorReajuste, setErrorReajuste] = useState<string | null>(null);
+  const [calendarioCompartibleVisible, setCalendarioCompartibleVisible] = useState(false);
+  const bloqueoReajuste = useRef({ actual: false });
   useFocusEffect(useCallback(() => () => {
     handledRoute.current = "";
     handledAlumno.current = "";
@@ -193,47 +216,111 @@ export default function CalendarioScreen() {
   };
   const moverClaseCompleta = async (fechaRecuperacion: string) => {
     if (!selectedDate || !motivoMovimiento) return;
-    try {
-      await guardarFeriado(
+    if (motivoMovimiento === "reajuste") {
+      const grupo = grupoDestinoSeleccionado;
+      if (!grupo || !selectedDate) {
+        Alert.alert("No se puede reajustar", "Elegí primero el grupo que querés reajustar.");
+        return;
+      }
+      if (new Date(`${fechaRecuperacion}T12:00:00`).getDay() !== grupo.dia) {
+        Alert.alert(
+          "Elegí el mismo día de la semana",
+          `El grupo ${grupo.nombre} se reúne los ${diasCompletos[grupo.dia].toLowerCase()}.`
+        );
+        return;
+      }
+      const confirmacion = prepararConfirmacionReajuste(
+        grupo,
         selectedDate,
-        motivoMovimientoClase(motivoMovimiento),
-        fechaRecuperacion,
-        motivoMovimiento
+        fechaRecuperacion
       );
-      await moverAgendaDelDia(selectedDate, fechaRecuperacion, motivoMovimiento);
+      setSelectorFechaVisible(confirmacion.selectorFechaVisible);
+      setErrorReajuste(null);
+      setReajustePendiente(confirmacion.reajustePendiente);
+      return;
+    }
+    try {
+      await moverClaseCompletaEnRepositorio(selectedDate, fechaRecuperacion, motivoMovimiento);
       await reprogramarNotificaciones(false);
       setSelectorFechaVisible(false);
       setMotivoMovimiento(null);
       await cargar();
-    } catch {
-      Alert.alert("No se pudo guardar", "Revisá la fecha de recuperación e intentá nuevamente.");
+    } catch (error) {
+      Alert.alert(
+        "No se pudo guardar",
+        error instanceof Error
+          ? error.message
+          : "Revisá la fecha de recuperación e intentá nuevamente."
+      );
     }
   };
-  const elegirMotivoMovimiento = () => Alert.alert(
-    "¿Por qué se mueve la clase?",
-    "Después elegís la fecha en la que recuperan.",
-    [
-      {
-        text: "Feriado",
-        onPress: () => {
-          setMotivoMovimiento("feriado");
-          setSelectorFechaVisible(true);
-        },
-      },
-      {
-        text: "Compromiso",
-        onPress: () => {
-          setMotivoMovimiento("compromiso");
-          setSelectorFechaVisible(true);
-        },
-      },
-      { text: "Cancelar", style: "cancel" },
-    ]
-  );
+  const elegirMotivoMovimiento = () => {
+    const estado = abrirSeleccionMotivo();
+    setMotivoMovimiento(estado.motivoMovimiento);
+    setSelectorFechaVisible(estado.selectorFechaVisible);
+    setSelectorMotivoVisible(estado.selectorMotivoVisible);
+  };
+
+  const cerrarSelectorMotivo = () => {
+    const estado = cancelarSeleccionMotivo();
+    setMotivoMovimiento(estado.motivoMovimiento);
+    setSelectorFechaVisible(estado.selectorFechaVisible);
+    setSelectorMotivoVisible(estado.selectorMotivoVisible);
+  };
+
+  const seleccionarMotivoMovimiento = (motivo: TipoMovimientoClase) => {
+    const estado = confirmarSeleccionMotivo(motivo);
+    setMotivoMovimiento(estado.motivoMovimiento);
+    setSelectorMotivoVisible(estado.selectorMotivoVisible);
+    setSelectorFechaVisible(estado.selectorFechaVisible);
+  };
+
+  const cancelarReajuste = () => {
+    if (guardandoReajuste) return;
+    setReajustePendiente(cancelarConfirmacionReajuste());
+    setErrorReajuste(null);
+    setMotivoMovimiento(null);
+  };
+
+  const confirmarReajuste = async () => {
+    if (!reajustePendiente || bloqueoReajuste.current.actual) return;
+    setGuardandoReajuste(true);
+    setErrorReajuste(null);
+    try {
+      const ejecutado = await ejecutarReajusteUnaVez(
+        reajustePendiente,
+        bloqueoReajuste.current,
+        {
+          reajustar: pendiente => reajustarGrupo(
+            pendiente.grupoId,
+            pendiente.fechaOrigen,
+            pendiente.fechaDestino
+          ).then(() => undefined),
+          reprogramarNotificaciones: () => reprogramarNotificaciones(false).then(() => undefined),
+          recargar: () => cargar().then(() => undefined),
+        }
+      );
+      if (!ejecutado) return;
+      setMotivoMovimiento(null);
+      setReajustePendiente(null);
+      setSelectedDate(null);
+      setDetailGroupId(null);
+    } catch (error) {
+      setErrorReajuste(
+        error instanceof Error ? error.message : "No se realizó ningún cambio."
+      );
+    } finally {
+      setGuardandoReajuste(false);
+    }
+  };
   const desmarcarFeriado = async () => {
     if (!selectedDate) return;
     try {
-      await quitarFeriado(selectedDate);
+      if (selectedHoliday?.tipo === "reajuste") {
+        await deshacerReajuste(selectedDate);
+      } else {
+        await quitarFeriado(selectedDate);
+      }
       await reprogramarNotificaciones(false);
       await cargar();
     } catch (error) {
@@ -249,8 +336,10 @@ export default function CalendarioScreen() {
       ? `${selectedHoliday.fecha_recuperacion.slice(8, 10)}/${selectedHoliday.fecha_recuperacion.slice(5, 7)}`
       : "la fecha de recuperación";
     Alert.alert(
-      "Quitar movimiento y volver atrás",
-      `Las personas trasladadas desde este día volverán desde ${recuperacion} a su fecha original.`,
+      selectedHoliday.tipo === "reajuste" ? "Deshacer reajuste" : "Quitar movimiento y volver atrás",
+      selectedHoliday.tipo === "reajuste"
+        ? "Se restaurará el patrón mensual anterior. Los movimientos manuales posteriores se conservarán y, si existe un conflicto, no se cambiará nada."
+        : `Las personas trasladadas desde este día volverán desde ${recuperacion} a su fecha original.`,
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Volver atrás", style: "destructive", onPress: desmarcarFeriado },
@@ -278,7 +367,18 @@ export default function CalendarioScreen() {
     <Screen
       title="Calendario"
       subtitle="Tocá un día para organizar quién viene"
-      action={<AddButton onPress={() => abrirNuevoGrupo()} />}
+      action={(
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Compartir calendario del mes"
+            onPress={() => setCalendarioCompartibleVisible(true)}
+            style={styles.shareButton}
+          >
+            <Ionicons name="share-social-outline" size={21} color={colors.primary} />
+          </Pressable>
+          <AddButton onPress={() => abrirNuevoGrupo()} />
+        </View>
+      )}
     >
       <ScrollView contentContainerStyle={ui.list}>
         <CalendarioMes
@@ -292,7 +392,7 @@ export default function CalendarioScreen() {
         />
         <View style={styles.tip}>
           <Ionicons name="information-circle-outline" size={21} color={colors.primary} />
-          <Text style={styles.tipText}>Cada grupo define si viene todas las semanas o cada 15 días. Después cada fecha se puede mover o ajustar manualmente.</Text>
+          <Text style={styles.tipText}>Cada grupo define si viene todas las semanas o 2 veces por mes. Después cada fecha se puede mover o ajustar manualmente.</Text>
         </View>
         <Pressable
           onPress={() => router.push("/(tabs)/modelos" as never)}
@@ -362,7 +462,14 @@ export default function CalendarioScreen() {
       )}
 
       <DetalleDiaModal
-        visible={!!selectedDate && !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible}
+        visible={detalleDiaDebeEstarVisible({
+          fechaSeleccionada: selectedDate,
+          selectorAlumnoVisible,
+          selectorFechaVisible,
+          selectorModeloVisible,
+          selectorMotivoVisible,
+          reajustePendiente,
+        })}
         fecha={selectedDate}
         esDetalleGrupo={!!detailGroupId}
         personas={selectedEntries}
@@ -396,11 +503,18 @@ export default function CalendarioScreen() {
         onClose={() => setSelectorAlumnoVisible(false)}
         onConfirm={agregar}
       />
+      <SeleccionarMotivoMovimientoModal
+        visible={selectorMotivoVisible}
+        onClose={cerrarSelectorMotivo}
+        onSelect={seleccionarMotivoMovimiento}
+      />
       <CalendarioFechaModal
         visible={selectorFechaVisible}
         titulo={motivoMovimiento === "feriado"
           ? "¿Qué fecha recuperan el feriado?"
-          : "¿Qué fecha recuperan la clase?"}
+          : motivoMovimiento === "reajuste"
+            ? "¿A qué fecha se reajusta la clase?"
+            : "¿Qué fecha recuperan la clase?"}
         fechaMinima={hoyTexto}
         fechaExcluida={selectedDate || undefined}
         onClose={() => {
@@ -408,6 +522,19 @@ export default function CalendarioScreen() {
           setMotivoMovimiento(null);
         }}
         onConfirm={moverClaseCompleta}
+      />
+      <ConfirmarReajusteModal
+        pendiente={reajustePendiente}
+        guardando={guardandoReajuste}
+        error={errorReajuste}
+        onCancelar={cancelarReajuste}
+        onConfirmar={confirmarReajuste}
+      />
+      <CompartirCalendarioModal
+        visible={calendarioCompartibleVisible}
+        cursor={cursor}
+        grupos={grupos}
+        onClose={() => setCalendarioCompartibleVisible(false)}
       />
       <ModeloPersonaModal
         visible={selectorModeloVisible}
@@ -426,6 +553,8 @@ export default function CalendarioScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 7 },
+  shareButton: { width: 42, height: 42, borderRadius: 14, borderWidth: 1, borderColor: "#BCD2CA", backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   tip: { flexDirection: "row", gap: 9, padding: 14, borderRadius: 14, backgroundColor: colors.primarySoft },
   tipText: { flex: 1, color: colors.primaryDark, fontSize: 12, lineHeight: 18 },
   modelsAccess: { minHeight: 72, padding: 13, borderRadius: 15, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 11 },
