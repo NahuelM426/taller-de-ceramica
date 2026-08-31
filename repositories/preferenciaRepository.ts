@@ -3,6 +3,9 @@ import { databasePromise } from "@/database/connection";
 export const clavesPreferencias = {
   recordatorioCopiaActivo: "recordatorio_copia_activo",
   ultimaCopia: "ultima_copia_seguridad",
+  recordatorioPagosActivo: "recordatorio_pagos_activo",
+  recordatorioPagosDia: "recordatorio_pagos_dia",
+  recordatorioPagosHora: "recordatorio_pagos_hora",
 } as const;
 
 export const preferenciaRepository = {

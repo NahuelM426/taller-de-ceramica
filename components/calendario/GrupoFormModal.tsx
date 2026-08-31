@@ -97,21 +97,28 @@ export function GrupoFormModal({
       frecuencia,
       fecha_inicio: primeraClase,
     };
-    if (grupo) {
-      await editarGrupo(grupo.id, data);
-    } else {
-      await crearGrupo(data);
-    }
-    const notificacionesOk = await reprogramarNotificaciones(notificacion);
-    if (notificacion && !notificacionesOk) {
+    try {
+      if (grupo) {
+        await editarGrupo(grupo.id, data);
+      } else {
+        await crearGrupo(data);
+      }
+      const notificacionesOk = await reprogramarNotificaciones(notificacion);
+      if (notificacion && !notificacionesOk) {
+        Alert.alert(
+          notificacionesDisponibles() ? "Notificaciones desactivadas" : "Requiere la app instalada",
+          notificacionesDisponibles()
+            ? "El grupo quedó guardado, pero el teléfono no autorizó los recordatorios. Podés habilitarlos desde los ajustes del dispositivo."
+            : "Expo Go no ejecuta este módulo completo en Android. El recordatorio funcionará en la development build o APK instalada de Taller de Cerámica."
+        );
+      }
+      await onSaved();
+    } catch (error) {
       Alert.alert(
-        notificacionesDisponibles() ? "Notificaciones desactivadas" : "Requiere la app instalada",
-        notificacionesDisponibles()
-          ? "El grupo quedó guardado, pero el teléfono no autorizó los recordatorios. Podés habilitarlos desde los ajustes del dispositivo."
-          : "Expo Go no ejecuta este módulo completo en Android. El recordatorio funcionará en la development build o APK instalada de Taller de Cerámica."
+        "No se pudo guardar el grupo",
+        error instanceof Error ? error.message : "Revisá las fechas e intentá nuevamente."
       );
     }
-    await onSaved();
   };
 
   const confirmarEliminar = () => {
@@ -230,7 +237,10 @@ export function GrupoFormModal({
         primeraClase !== grupo.fecha_inicio
       ) && (
         <Text style={styles.dateWarning}>
-          Cambiar el día o el turno mensual rearma las próximas clases habituales. Las fechas que acomodaste manualmente se conservan.
+          {grupo.frecuencia === "quincenal" && frecuencia === "quincenal" &&
+          dia === grupo.dia && primeraClase !== grupo.fecha_inicio
+            ? "Cambiar la primera clase hará un reajuste de todo el patrón futuro. Después podrás deshacerlo desde el detalle del grupo."
+            : "Cambiar el día o la frecuencia rearma las próximas clases habituales. Las fechas que acomodaste manualmente se conservan."}
         </Text>
       )}
       {!!grupo && (

@@ -8,7 +8,8 @@ import { AlumnoChoice } from "@/components/AlumnoChoice";
 import { colors } from "@/lib/theme";
 import {
   buscarProximaClaseHabitual, filtrarAlumnosParaAgregar, FiltroAlumnos,
-  ocupacionInicial, TipoOcupacion,
+  ocupacionInicial, pendientesExtraAlumno, pendientesRegularesAlumno,
+  TipoOcupacion,
 } from "@/lib/seleccionAgenda";
 import { AgendaAlumno, Alumno, Grupo } from "@/models";
 
@@ -44,6 +45,10 @@ export function AgregarPersonaModal({
     [alumnos, idsOcupados, busqueda, filtro]
   );
   const alumnoElegido = alumnos.find(item => item.id === seleccion);
+  const pendientesRegulares = alumnoElegido
+    ? pendientesRegularesAlumno(alumnoElegido)
+    : 0;
+  const pendientesExtra = alumnoElegido ? pendientesExtraAlumno(alumnoElegido) : 0;
   const origen = buscarProximaClaseHabitual(agenda, alumnoElegido, fecha);
   const yaPerteneceAlDestino = !!alumnoElegido && !alumnoElegido.sin_grupo &&
     alumnoElegido.grupo_id === grupoDestino?.id;
@@ -113,20 +118,36 @@ export function AgregarPersonaModal({
                 onPress={() => elegirAlumno(alumno)}
               />
             ))}
-          </ScrollView>
-
-          {!!alumnoElegido && (
-            <View style={styles.coverage}>
+            {!!alumnoElegido && (
+              <View style={styles.coverage}>
               <Text style={styles.coverageLabel}>¿CÓMO OCUPA ESTE LUGAR?</Text>
               <CoverageChoice
                 title="Recupera una pendiente"
-                detail={alumnoElegido.pendientes
-                  ? `Descuenta 1 día · le quedan ${alumnoElegido.pendientes - 1}`
+                detail={pendientesRegulares
+                  ? `Descuenta 1 día · le quedan ${pendientesRegulares - 1}`
                   : "No tiene días pendientes"}
                 icon="refresh-circle-outline"
                 selected={tipo === "recuperacion"}
-                disabled={!alumnoElegido.pendientes}
+                disabled={!pendientesRegulares}
                 onPress={() => setTipo("recuperacion")}
+              />
+              <CoverageChoice
+                title="Recupera una clase extra pendiente"
+                detail={pendientesExtra
+                  ? `Usa 1 extra que el taller le debe · le quedan ${pendientesExtra - 1}`
+                  : "El taller no le debe clases extra"}
+                icon="ticket-outline"
+                selected={tipo === "recuperacion_extra"}
+                disabled={!pendientesExtra}
+                onPress={() => setTipo("recuperacion_extra")}
+              />
+              <CoverageChoice
+                title="Clase extra a cobrar"
+                detail="Se agenda ahora y queda marcada como pendiente de pago"
+                icon="cash-outline"
+                selected={tipo === "extra_debe"}
+                disabled={false}
+                onPress={() => setTipo("extra_debe")}
               />
               <CoverageChoice
                 title="Cambia su próxima clase"
@@ -152,8 +173,9 @@ export function AgregarPersonaModal({
                 disabled={!puedeFijarse}
                 onPress={() => setTipo("fijar")}
               />
-            </View>
-          )}
+              </View>
+            )}
+          </ScrollView>
 
           <View style={styles.footer}>
             <Pressable disabled={guardando} onPress={onClose} style={styles.secondaryButton}>
@@ -217,7 +239,7 @@ const styles = StyleSheet.create({
   close: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: colors.primarySoft },
   search: { margin: 14, marginBottom: 8, minHeight: 47, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: "white", flexDirection: "row", alignItems: "center", gap: 8 },
   searchInput: { flex: 1, color: colors.ink, fontSize: 14 },
-  filters: { flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingBottom: 10 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, paddingHorizontal: 14, paddingBottom: 10 },
   filter: { minHeight: 38, paddingHorizontal: 14, borderRadius: 99, borderWidth: 1, borderColor: colors.border, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
   filterOn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   filterText: { color: colors.muted, fontSize: 12, fontWeight: "800" },

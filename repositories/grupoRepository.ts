@@ -6,6 +6,7 @@ import {
   cancelarPendientesPorAusenciasFuturas,
   revertirMovimientoAgenda,
 } from "@/database/pendientes";
+import { reajustarGrupoDesdeFechaInicio } from "@/repositories/reajusteRepository";
 
 export const grupoRepository = {
   async listar() {
@@ -27,18 +28,32 @@ export const grupoRepository = {
   async editar(id: number, data: GrupoInput) {
     const db = await databasePromise;
     const anterior = await db.getFirstAsync<Grupo>("SELECT * FROM grupos WHERE id = ? AND activo = 1", id);
+    let fechaInicioFinal = data.fecha_inicio;
+    let fechaReajustada = false;
+    if (
+      anterior &&
+      data.fecha_inicio &&
+      anterior.fecha_inicio !== data.fecha_inicio &&
+      anterior.dia === data.dia &&
+      anterior.frecuencia === "quincenal" &&
+      data.frecuencia === "quincenal"
+    ) {
+      const resultado = await reajustarGrupoDesdeFechaInicio(id, data.fecha_inicio);
+      fechaInicioFinal = resultado.fechaDestino;
+      fechaReajustada = true;
+    }
     await db.withTransactionAsync(async () => {
       await db.runAsync(
         `UPDATE grupos SET nombre = ?, dia = ?, hora = ?, capacidad = ?, color = ?,
           notificacion = ?, minutos_antes = ?, frecuencia = ?, fecha_inicio = ?
           WHERE id = ? AND activo = 1`,
         data.nombre.trim(), data.dia, data.hora, data.capacidad, data.color,
-        data.notificacion, data.minutos_antes, data.frecuencia, data.fecha_inicio, id
+        data.notificacion, data.minutos_antes, data.frecuencia, fechaInicioFinal, id
       );
       if (anterior && (
         anterior.dia !== data.dia ||
         anterior.frecuencia !== data.frecuencia ||
-        anterior.fecha_inicio !== data.fecha_inicio
+        (!fechaReajustada && anterior.fecha_inicio !== data.fecha_inicio)
       )) {
         await rearmarAgendaRegularGrupo(db, id);
       }
@@ -84,6 +99,28 @@ export const grupoRepository = {
         "DELETE FROM clases WHERE grupo_id = ? AND fecha >= ? AND estado = 'recuperacion'",
         id, desde
       );
+      const extras = await db.getAllAsync<{
+        alumno_id: number; mes: string; cantidad: number;
+      }>(
+        `SELECT alumno_id, pago_extra_mes AS mes, COUNT(*) AS cantidad
+         FROM agenda_alumnos
+         WHERE grupo_id = ? AND fecha >= ? AND estado = 'programada'
+           AND pago_extra_mes IS NOT NULL
+         GROUP BY alumno_id, pago_extra_mes`,
+        id,
+        desde
+      );
+      for (const extra of extras) {
+        await db.runAsync(
+          `UPDATE pagos_alumnos
+           SET clases_extra_usadas = MAX(clases_extra_usadas - ?, 0), actualizado_en = ?
+           WHERE alumno_id = ? AND mes = ?`,
+          extra.cantidad,
+          new Date().toISOString(),
+          extra.alumno_id,
+          extra.mes
+        );
+      }
       await db.runAsync(
         `UPDATE agenda_alumnos SET estado = 'cancelada'
          WHERE grupo_id = ? AND fecha >= ? AND estado != 'cancelada'`,
@@ -93,6 +130,7 @@ export const grupoRepository = {
         "UPDATE alumnos SET sin_grupo = 1 WHERE grupo_id = ? AND activo = 1",
         id
       );
+      await db.runAsync("DELETE FROM feriados WHERE grupo_id = ?", id);
       await db.runAsync(
         "UPDATE grupos SET activo = 0, notificacion = 0 WHERE id = ?",
         id

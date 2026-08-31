@@ -18,10 +18,14 @@ export interface AgendaAlumno {
   estado: EstadoAgenda;
   modelo_id: number | null;
   modelo_nombre: string | null;
+  modelo_ids?: number[];
+  modelo_nombres?: string[];
   necesidades: string | null;
   cubre_agenda_id?: number | null;
   origen_agenda_id?: number | null;
   feriado_origen?: string | null;
   feriado_tipo_origen?: TipoAgenda | null;
   motivo_movimiento?: TipoMovimientoClase | null;
+  pago_extra_mes?: string | null;
+  extra_adeudada?: number;
 }

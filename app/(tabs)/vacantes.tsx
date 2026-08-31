@@ -11,12 +11,12 @@ import {
   armarVacantes, fechaLocal, horaTexto, mensajeVacante,
   momentoTexto,
 } from "@/lib/vacantes";
-import { AgendaAlumno, Grupo, Vacante } from "@/models";
+import { AgendaAlumno, Feriado, Grupo, Vacante } from "@/models";
 
 export default function VacantesScreen() {
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [agenda, setAgenda] = useState<AgendaAlumno[]>([]);
-  const [feriados, setFeriados] = useState<string[]>([]);
+  const [feriados, setFeriados] = useState<Feriado[]>([]);
   const [loading, setLoading] = useState(false);
 
   const cargar = useCallback(async () => {
@@ -30,7 +30,7 @@ export default function VacantesScreen() {
     ]);
     setGrupos(gruposCargados);
     setAgenda(agendaCargada);
-    setFeriados(feriadosCargados.map(item => item.fecha));
+    setFeriados(feriadosCargados);
     setLoading(false);
   }, []);
 

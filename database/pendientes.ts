@@ -1,4 +1,4 @@
-import type { TipoMovimientoPendiente } from "@/models";
+import type { CategoriaPendiente, TipoMovimientoPendiente } from "@/models";
 import { fechaLocal } from "./dates";
 
 type ValorSqlite = string | number | null | boolean | Uint8Array;
@@ -16,6 +16,7 @@ interface MovimientoInput {
   alumnoId: number;
   delta: number;
   tipo: TipoMovimientoPendiente;
+  categoria?: CategoriaPendiente;
   clave: string;
   agendaId?: number | null;
   revierteMovimientoId?: number | null;
@@ -40,6 +41,23 @@ export async function saldoPendientes(db: DatabasePendientes, alumnoId: number) 
   return resultado?.saldo || 0;
 }
 
+export async function saldosPendientesPorCategoria(
+  db: DatabasePendientes,
+  alumnoId: number
+) {
+  const resultado = await db.getFirstAsync<{
+    total: number; extras: number;
+  }>(
+    `SELECT COALESCE(SUM(delta), 0) AS total,
+      COALESCE(SUM(CASE WHEN categoria = 'extra' THEN delta ELSE 0 END), 0) AS extras
+     FROM movimientos_pendientes WHERE alumno_id = ?`,
+    alumnoId
+  );
+  const total = Math.max(resultado?.total || 0, 0);
+  const extras = Math.min(Math.max(resultado?.extras || 0, 0), total);
+  return { total, extras, regulares: total - extras };
+}
+
 export async function registrarMovimientoPendiente(
   db: DatabasePendientes,
   movimiento: MovimientoInput
@@ -59,14 +77,27 @@ export async function registrarMovimientoPendiente(
   if (saldoAnterior + movimiento.delta < 0) {
     throw new Error("El movimiento dejaría un saldo de pendientes negativo");
   }
+  const categoria = movimiento.categoria || "regular";
+  if (movimiento.delta < 0) {
+    const saldos = await saldosPendientesPorCategoria(db, movimiento.alumnoId);
+    const disponible = categoria === "extra" ? saldos.extras : saldos.regulares;
+    if (disponible + movimiento.delta < 0) {
+      throw new Error(
+        categoria === "extra"
+          ? "El alumno no tiene clases extra pendientes"
+          : "El alumno no tiene clases habituales pendientes"
+      );
+    }
+  }
   const resultado = await db.runAsync(
     `INSERT INTO movimientos_pendientes
-     (alumno_id,agenda_id,delta,tipo,clave,revierte_movimiento_id,fecha,creado_en)
-     VALUES (?,?,?,?,?,?,?,?)`,
+     (alumno_id,agenda_id,delta,tipo,categoria,clave,revierte_movimiento_id,fecha,creado_en)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
     movimiento.alumnoId,
     movimiento.agendaId ?? null,
     movimiento.delta,
     movimiento.tipo,
+    categoria,
     movimiento.clave,
     movimiento.revierteMovimientoId ?? null,
     movimiento.fecha || fechaLocal(),
@@ -88,6 +119,7 @@ export async function registrarMovimientoAgenda(
     agendaId: number;
     delta: 1 | -1;
     tipo: TipoMovimientoAgenda;
+    categoria?: CategoriaPendiente;
     fecha: string;
   }
 ) {
@@ -115,8 +147,10 @@ export async function revertirMovimientoAgenda(
     fecha: string;
   }
 ) {
-  const original = await db.getFirstAsync<{ id: number; delta: number }>(`
-    SELECT m.id, m.delta
+  const original = await db.getFirstAsync<{
+    id: number; delta: number; categoria: CategoriaPendiente;
+  }>(`
+    SELECT m.id, m.delta, m.categoria
     FROM movimientos_pendientes m
     WHERE m.agenda_id = ? AND m.tipo = ?
       AND NOT EXISTS (
@@ -131,6 +165,7 @@ export async function revertirMovimientoAgenda(
       agendaId: movimiento.agendaId,
       delta: -original.delta,
       tipo: "reversion",
+      categoria: original.categoria,
       clave: `reversion:movimiento:${original.id}`,
       revierteMovimientoId: original.id,
       fecha: movimiento.fecha,

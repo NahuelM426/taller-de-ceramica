@@ -1,5 +1,5 @@
-import { AgendaAlumno, ClaseProgramada, Grupo, Vacante } from "@/models";
-import { grupoOcurreEnFecha } from "@/lib/grupos";
+import { AgendaAlumno, ClaseProgramada, Feriado, Grupo, Vacante } from "@/models";
+import { grupoOcurreEnFechaConsiderandoAgenda } from "@/lib/grupos";
 
 export function fechaLocal(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -8,26 +8,31 @@ export function fechaLocal(date = new Date()) {
 export function armarClases(
   grupos: Grupo[],
   agenda: AgendaAlumno[],
-  feriados: string[],
+  feriados: Feriado[],
   desde = new Date(),
   cantidadDias = 60
 ) {
   const inicio = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate(), 12);
-  const fechasFeriadas = new Set(feriados);
+  const grupoEstaMovido = (fecha: string, grupoId: number) => feriados.some(item =>
+    item.fecha === fecha && (item.grupo_id === 0 || item.grupo_id === grupoId)
+  );
   const claves = new Set<string>();
 
   for (let offset = 0; offset <= cantidadDias; offset++) {
     const fecha = new Date(inicio);
     fecha.setDate(fecha.getDate() + offset);
     const valor = fechaLocal(fecha);
-    if (fechasFeriadas.has(valor)) continue;
-    grupos.filter(grupo => grupoOcurreEnFecha(grupo, valor)).forEach(grupo => {
-      claves.add(`${valor}|${grupo.id}`);
+    grupos.filter(grupo =>
+      grupoOcurreEnFechaConsiderandoAgenda(grupo, valor, agenda)
+    ).forEach(grupo => {
+      if (!grupoEstaMovido(valor, grupo.id)) claves.add(`${valor}|${grupo.id}`);
     });
   }
 
   agenda.forEach(item => {
-    if (!fechasFeriadas.has(item.fecha)) claves.add(`${item.fecha}|${item.grupo_id}`);
+    if (!grupoEstaMovido(item.fecha, item.grupo_id)) {
+      claves.add(`${item.fecha}|${item.grupo_id}`);
+    }
   });
 
   return Array.from(claves).map(key => {
@@ -47,7 +52,7 @@ export function armarClases(
 export function armarVacantes(
   grupos: Grupo[],
   agenda: AgendaAlumno[],
-  feriados: string[],
+  feriados: Feriado[],
   desde = new Date(),
   cantidadDias = 60
 ) {

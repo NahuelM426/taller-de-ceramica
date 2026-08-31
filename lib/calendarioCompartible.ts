@@ -1,5 +1,8 @@
-import { grupoOcurreEnFecha } from "@/lib/grupos";
-import type { Grupo } from "@/models";
+import {
+  agendaRepresentaClaseHabitual,
+  grupoOcurreEnFechaConsiderandoAgenda,
+} from "@/lib/grupos";
+import type { AgendaAlumno, Grupo } from "@/models";
 
 export const MESES_CALENDARIO = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -27,12 +30,18 @@ export interface CalendarioCompartibleData {
   leyenda: Array<Pick<Grupo, "id" | "nombre" | "dia" | "hora" | "color">>;
 }
 
+export function filtrarGruposCompartibles(grupos: Grupo[], idsSeleccionados: number[]) {
+  const seleccionados = new Set(idsSeleccionados);
+  return grupos.filter(grupo => grupo.activo === 1 && seleccionados.has(grupo.id));
+}
+
 const iso = (anio: number, mes: number, dia: number) =>
   `${anio}-${String(mes + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
 
 export function prepararCalendarioCompartible(
   cursor: Pick<Date, "getFullYear" | "getMonth">,
-  grupos: Grupo[]
+  grupos: Grupo[],
+  agenda: AgendaAlumno[] = []
 ): CalendarioCompartibleData {
   const anio = cursor.getFullYear();
   const mes = cursor.getMonth();
@@ -50,7 +59,13 @@ export function prepararCalendarioCompartible(
       dia,
       fecha,
       marcas: activos
-        .filter(grupo => grupoOcurreEnFecha(grupo, fecha))
+        .filter(grupo =>
+          grupoOcurreEnFechaConsiderandoAgenda(grupo, fecha, agenda) ||
+          agenda.some(item =>
+            item.grupo_id === grupo.id && item.fecha === fecha &&
+            agendaRepresentaClaseHabitual(item)
+          )
+        )
         .map(grupo => ({ grupoId: grupo.id, color: grupo.color })),
     };
   });

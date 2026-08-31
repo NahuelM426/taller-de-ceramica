@@ -6,5 +6,6 @@ export * from "./Grupo";
 export * from "./Modelo";
 export * from "./Molde";
 export * from "./MovimientoPendiente";
+export * from "./PagoAlumno";
 export * from "./ReajusteGrupo";
 export * from "./Vacante";

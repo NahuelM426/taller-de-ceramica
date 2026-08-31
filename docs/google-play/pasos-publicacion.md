@@ -26,6 +26,6 @@
 
 ## Actualizaciones
 
-Cada nuevo AAB debe usar un `android.versionCode` superior al anterior. La versión preparada actualmente es `1.0.2` con código `3`.
+Cada nuevo AAB debe usar un `android.versionCode` superior al anterior. La versión preparada actualmente es `1.0.11` con código `12`.
 
 Antes de futuras publicaciones hay que revisar nuevamente Seguridad de datos si se agregan anuncios, analítica, sincronización, cuentas o cualquier servicio que transmita información fuera del dispositivo.

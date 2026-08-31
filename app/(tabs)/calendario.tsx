@@ -12,9 +12,11 @@ import { ConfirmarReajusteModal } from "@/components/calendario/ConfirmarReajust
 import { DetalleDiaModal } from "@/components/calendario/DetalleDiaModal";
 import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
 import { SeleccionarMotivoMovimientoModal } from "@/components/calendario/SeleccionarMotivoMovimientoModal";
+import { SeleccionarGrupoDiaModal } from "@/components/calendario/SeleccionarGrupoDiaModal";
 import { useCalendarioData } from "@/hooks/useCalendarioData";
 import {
-  asignarModeloAgenda, asignarRecuperacion, cambiarClaseParaCubrir,
+  asignarClaseExtraAdeudada, asignarModelosAgenda,
+  asignarRecuperacion, cambiarClaseParaCubrir,
   quitarFechaAgenda, registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
 import { fijarAlumnoEnGrupo } from "@/repositories/alumnoRepository";
@@ -22,11 +24,16 @@ import {
   moverClaseCompleta as moverClaseCompletaEnRepositorio,
   quitarFeriado,
 } from "@/repositories/feriadoRepository";
-import { deshacerReajuste, reajustarGrupo } from "@/repositories/reajusteRepository";
+import {
+  deshacerUltimoReajuste,
+  obtenerUltimoReajusteActivo,
+  reajustarGrupo,
+} from "@/repositories/reajusteRepository";
 import { colors, groupColors } from "@/lib/theme";
 import { textoHorarioAviso } from "@/lib/horarios";
 import { notificacionesDisponibles, reprogramarNotificaciones } from "@/lib/notifications";
 import { TipoOcupacion } from "@/lib/seleccionAgenda";
+import { debeElegirGrupoDelDia } from "@/lib/calendario";
 import { textoFrecuenciaGrupo } from "@/lib/grupos";
 import {
   cancelarConfirmacionReajuste,
@@ -45,6 +52,8 @@ import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const iso = (year: number, month: number, day: number) =>
   `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+const fechaCorta = (fecha: string) =>
+  `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
 const proximaFechaDelDia = (dia: number, desde: string) => {
   const fecha = new Date(`${desde}T12:00:00`);
   while (fecha.getDay() !== dia) fecha.setDate(fecha.getDate() + 1);
@@ -70,6 +79,7 @@ export default function CalendarioScreen() {
     cargar,
     personasSeleccionadas: selectedEntries,
     feriadoSeleccionado: selectedHoliday,
+    gruposDelDiaSeleccionado,
     grupoDestinoSeleccionado,
     idsOcupadosSeleccionados,
   } = useCalendarioData(selectedDate, detailGroupId);
@@ -90,6 +100,13 @@ export default function CalendarioScreen() {
   const [errorReajuste, setErrorReajuste] = useState<string | null>(null);
   const [calendarioCompartibleVisible, setCalendarioCompartibleVisible] = useState(false);
   const bloqueoReajuste = useRef({ actual: false });
+  const selectorGrupoDiaVisible = debeElegirGrupoDelDia(
+    selectedDate,
+    detailGroupId,
+    gruposDelDiaSeleccionado
+  ) &&
+    !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible &&
+    !selectorMotivoVisible && !reajustePendiente;
   useFocusEffect(useCallback(() => () => {
     handledRoute.current = "";
     handledAlumno.current = "";
@@ -178,6 +195,10 @@ export default function CalendarioScreen() {
     try {
       if (tipo === "recuperacion") {
         await asignarRecuperacion(alumno.id, grupoDestinoId, selectedDate);
+      } else if (tipo === "recuperacion_extra") {
+        await asignarRecuperacion(alumno.id, grupoDestinoId, selectedDate, "extra");
+      } else if (tipo === "extra_debe") {
+        await asignarClaseExtraAdeudada(alumno.id, grupoDestinoId, selectedDate);
       } else if (tipo === "fijar") {
         await fijarAlumnoEnGrupo(alumno.id, grupoDestinoId, selectedDate);
       } else {
@@ -200,10 +221,10 @@ export default function CalendarioScreen() {
     setEditAgenda(item);
     setSelectorModeloVisible(true);
   };
-  const guardarModelo = async (modeloId: number | null, necesidades: string) => {
+  const guardarModelo = async (modeloIds: number[], necesidades: string) => {
     if (!editAgenda) return false;
     try {
-      await asignarModeloAgenda(editAgenda.id, modeloId, necesidades);
+      await asignarModelosAgenda(editAgenda.id, modeloIds, necesidades);
       setSelectorModeloVisible(false);
       setEditAgenda(null);
       await reprogramarNotificaciones(false);
@@ -216,12 +237,12 @@ export default function CalendarioScreen() {
   };
   const moverClaseCompleta = async (fechaRecuperacion: string) => {
     if (!selectedDate || !motivoMovimiento) return;
+    const grupo = grupoDestinoSeleccionado;
+    if (!grupo) {
+      Alert.alert("Elegí un grupo", "Seleccioná cuál de los grupos de este día querés mover.");
+      return;
+    }
     if (motivoMovimiento === "reajuste") {
-      const grupo = grupoDestinoSeleccionado;
-      if (!grupo || !selectedDate) {
-        Alert.alert("No se puede reajustar", "Elegí primero el grupo que querés reajustar.");
-        return;
-      }
       if (new Date(`${fechaRecuperacion}T12:00:00`).getDay() !== grupo.dia) {
         Alert.alert(
           "Elegí el mismo día de la semana",
@@ -240,7 +261,12 @@ export default function CalendarioScreen() {
       return;
     }
     try {
-      await moverClaseCompletaEnRepositorio(selectedDate, fechaRecuperacion, motivoMovimiento);
+      await moverClaseCompletaEnRepositorio(
+        selectedDate,
+        fechaRecuperacion,
+        motivoMovimiento,
+        grupo.id
+      );
       await reprogramarNotificaciones(false);
       setSelectorFechaVisible(false);
       setMotivoMovimiento(null);
@@ -255,6 +281,10 @@ export default function CalendarioScreen() {
     }
   };
   const elegirMotivoMovimiento = () => {
+    if (!grupoDestinoSeleccionado) {
+      Alert.alert("Elegí un grupo", "Seleccioná primero el grupo que querés mover.");
+      return;
+    }
     const estado = abrirSeleccionMotivo();
     setMotivoMovimiento(estado.motivoMovimiento);
     setSelectorFechaVisible(estado.selectorFechaVisible);
@@ -314,12 +344,14 @@ export default function CalendarioScreen() {
     }
   };
   const desmarcarFeriado = async () => {
-    if (!selectedDate) return;
+    if (!selectedHoliday) return;
+    const grupoMovimientoId = selectedHoliday.grupo_id || grupoDestinoSeleccionado?.id;
+    if (!grupoMovimientoId) return;
     try {
-      if (selectedHoliday?.tipo === "reajuste") {
-        await deshacerReajuste(selectedDate);
+      if (selectedHoliday.tipo === "reajuste") {
+        await deshacerUltimoReajuste(grupoMovimientoId);
       } else {
-        await quitarFeriado(selectedDate);
+        await quitarFeriado(selectedHoliday.fecha, selectedHoliday.grupo_id);
       }
       await reprogramarNotificaciones(false);
       await cargar();
@@ -330,16 +362,42 @@ export default function CalendarioScreen() {
       );
     }
   };
-  const confirmarDesmarcarFeriado = () => {
+  const confirmarDesmarcarFeriado = async () => {
     if (!selectedHoliday) return;
+    const grupoMovimientoId = selectedHoliday.grupo_id || grupoDestinoSeleccionado?.id;
+    if (selectedHoliday.tipo === "reajuste") {
+      if (!grupoMovimientoId) return;
+      try {
+        const ultimo = await obtenerUltimoReajusteActivo(grupoMovimientoId);
+        if (!ultimo) throw new Error("No se encontró un reajuste activo para deshacer");
+        const nombreGrupo = grupoDestinoSeleccionado?.nombre || "este grupo";
+        const esAnterior = ultimo.fecha_origen !== selectedHoliday.fecha;
+        Alert.alert(
+          "Deshacer el último reajuste",
+          `Se deshará el último reajuste de ${nombreGrupo}: ${fechaCorta(ultimo.fecha_origen)} → ${fechaCorta(ultimo.fecha_destino)}. ` +
+            "Se restaurará el patrón mensual anterior y se conservarán los movimientos manuales posteriores." +
+            (esAnterior
+              ? "\n\nAbriste un reajuste anterior; por seguridad primero se deshará el más reciente."
+              : ""),
+          [
+            { text: "Cancelar", style: "cancel" },
+            { text: "Volver atrás", style: "destructive", onPress: desmarcarFeriado },
+          ]
+        );
+      } catch (error) {
+        Alert.alert(
+          "No se pudo revisar el reajuste",
+          error instanceof Error ? error.message : "Intentá nuevamente."
+        );
+      }
+      return;
+    }
     const recuperacion = selectedHoliday.fecha_recuperacion
-      ? `${selectedHoliday.fecha_recuperacion.slice(8, 10)}/${selectedHoliday.fecha_recuperacion.slice(5, 7)}`
+      ? fechaCorta(selectedHoliday.fecha_recuperacion)
       : "la fecha de recuperación";
     Alert.alert(
-      selectedHoliday.tipo === "reajuste" ? "Deshacer reajuste" : "Quitar movimiento y volver atrás",
-      selectedHoliday.tipo === "reajuste"
-        ? "Se restaurará el patrón mensual anterior. Los movimientos manuales posteriores se conservarán y, si existe un conflicto, no se cambiará nada."
-        : `Las personas trasladadas desde este día volverán desde ${recuperacion} a su fecha original.`,
+      "Quitar movimiento y volver atrás",
+      `Las personas trasladadas al ${recuperacion} volverán a su fecha original.`,
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Volver atrás", style: "destructive", onPress: desmarcarFeriado },
@@ -462,7 +520,7 @@ export default function CalendarioScreen() {
       )}
 
       <DetalleDiaModal
-        visible={detalleDiaDebeEstarVisible({
+        visible={!selectorGrupoDiaVisible && detalleDiaDebeEstarVisible({
           fechaSeleccionada: selectedDate,
           selectorAlumnoVisible,
           selectorFechaVisible,
@@ -472,6 +530,8 @@ export default function CalendarioScreen() {
         })}
         fecha={selectedDate}
         esDetalleGrupo={!!detailGroupId}
+        grupo={grupoDestinoSeleccionado}
+        puedeCambiarGrupo={gruposDelDiaSeleccionado.length > 1}
         personas={selectedEntries}
         feriado={selectedHoliday}
         hoy={hoyTexto}
@@ -491,6 +551,19 @@ export default function CalendarioScreen() {
         onAgregarPersona={() => setSelectorAlumnoVisible(true)}
         onMoverClase={elegirMotivoMovimiento}
         onDeshacerMovimiento={confirmarDesmarcarFeriado}
+        onCambiarGrupo={() => setDetailGroupId(null)}
+      />
+
+      <SeleccionarGrupoDiaModal
+        visible={selectorGrupoDiaVisible}
+        fecha={selectedDate}
+        grupos={gruposDelDiaSeleccionado}
+        agenda={agenda}
+        onClose={() => {
+          setSelectedDate(null);
+          setDetailGroupId(null);
+        }}
+        onSelect={setDetailGroupId}
       />
 
       <AgregarPersonaModal
@@ -534,13 +607,14 @@ export default function CalendarioScreen() {
         visible={calendarioCompartibleVisible}
         cursor={cursor}
         grupos={grupos}
+        agenda={agenda}
         onClose={() => setCalendarioCompartibleVisible(false)}
       />
       <ModeloPersonaModal
         visible={selectorModeloVisible}
         alumnoNombre={editAgenda?.alumno_nombre || "la persona"}
         modelos={modelos}
-        modeloId={editAgenda?.modelo_id || null}
+        modeloIds={editAgenda?.modelo_ids || (editAgenda?.modelo_id ? [editAgenda.modelo_id] : [])}
         necesidadesIniciales={editAgenda?.necesidades || ""}
         onClose={() => {
           setSelectorModeloVisible(false);

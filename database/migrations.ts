@@ -7,6 +7,7 @@ import {
 import { databasePromise, Database } from "./connection";
 import { fechaLocal } from "./dates";
 import { migrarSaldoInicialPendientes } from "./pendientes";
+import { migrarModelosMultiples } from "./schema";
 
 async function ejecutarUnaVez(
   db: Database,
@@ -129,5 +130,11 @@ export async function ejecutarMigracionesDeDatos() {
   await ejecutarUnaVez(db, "libro_pendientes_v1", () => migrarSaldoInicialPendientes(db));
   await ejecutarUnaVez(db, "agenda_dos_clases_por_mes_v5", async () => {
     await reajustarAgendaDosClasesPorMes(db);
+  });
+  await ejecutarUnaVez(db, "agenda_reajuste_transicion_mensual_v6", async () => {
+    await reajustarAgendaDosClasesPorMes(db);
+  });
+  await ejecutarUnaVez(db, "agenda_modelos_multiples_v7", async () => {
+    await migrarModelosMultiples(db);
   });
 }

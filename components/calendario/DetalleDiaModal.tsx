@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { FormModal } from "@/components/ui";
 import { etiquetaMovimientoClase, etiquetaRecuperacion } from "@/lib/movimientosClase";
 import { colors } from "@/lib/theme";
-import type { AgendaAlumno, Feriado } from "@/models";
+import type { AgendaAlumno, Feriado, Grupo } from "@/models";
 
 const SIN_NECESIDADES = "No necesita";
 
@@ -12,6 +12,8 @@ interface DetalleDiaModalProps {
   visible: boolean;
   fecha: string | null;
   esDetalleGrupo: boolean;
+  grupo?: Grupo | null;
+  puedeCambiarGrupo: boolean;
   personas: AgendaAlumno[];
   feriado?: Feriado;
   hoy: string;
@@ -24,12 +26,15 @@ interface DetalleDiaModalProps {
   onAgregarPersona: () => void;
   onMoverClase: () => void;
   onDeshacerMovimiento: () => void;
+  onCambiarGrupo: () => void;
 }
 
 export function DetalleDiaModal({
   visible,
   fecha,
   esDetalleGrupo,
+  grupo,
+  puedeCambiarGrupo,
   personas,
   feriado,
   hoy,
@@ -42,6 +47,7 @@ export function DetalleDiaModal({
   onAgregarPersona,
   onMoverClase,
   onDeshacerMovimiento,
+  onCambiarGrupo,
 }: DetalleDiaModalProps) {
   return (
     <FormModal
@@ -59,6 +65,11 @@ export function DetalleDiaModal({
         },
       ]}>
         <Text style={styles.daySummaryTitle}>{fecha}</Text>
+        {!!grupo && (
+          <Text style={[styles.selectedGroup, { borderLeftColor: grupo.color }]}>
+            {grupo.nombre} · {grupo.hora}
+          </Text>
+        )}
         {!!feriado && (
           <Text style={styles.movementType}>{etiquetaMovimientoClase(feriado.tipo)}</Text>
         )}
@@ -78,13 +89,23 @@ export function DetalleDiaModal({
           <Ionicons name="add" size={20} color="white" />
           <Text style={styles.addGroupInSummaryText}>Crear grupo</Text>
         </Pressable>
+        {puedeCambiarGrupo && (
+          <Pressable onPress={onCambiarGrupo} style={styles.changeGroupButton}>
+            <Ionicons name="people-outline" size={17} color={colors.primary} />
+            <Text style={styles.changeGroupText}>Ver otro grupo de este día</Text>
+          </Pressable>
+        )}
       </View>
 
       <Text style={styles.sectionTitle}>PERSONAS DE ESTE DÍA</Text>
       {!personas.length && (
         <Text style={styles.emptyText}>Todavía no hay personas cargadas para este día.</Text>
       )}
-      {personas.map(item => (
+      {personas.map(item => {
+        const nombresModelos = item.modelo_nombres ||
+          (item.modelo_nombre ? [item.modelo_nombre] : []);
+        const tieneModelos = nombresModelos.length > 0;
+        return (
         <View key={item.id} style={[styles.personRow, { borderLeftColor: item.grupo_color }]}>
           <View style={styles.personHeader}>
             <View style={{ flex: 1 }}>
@@ -93,17 +114,19 @@ export function DetalleDiaModal({
                 {item.hora} · {item.grupo_nombre}
                 {item.feriado_origen
                   ? ` · ${etiquetaRecuperacion(item.motivo_movimiento, item.feriado_origen)}`
+                  : item.extra_adeudada ? " · Clase extra a cobrar"
+                  : item.pago_extra_mes ? " · Clase extra pagada"
                   : item.tipo === "recuperacion" ? " · Recuperación" : ""}
               </Text>
               <Text style={[
                 styles.personModel,
-                !item.modelo_id && item.necesidades !== SIN_NECESIDADES && {
+                 !tieneModelos && item.necesidades !== SIN_NECESIDADES && {
                   color: colors.warning,
                 },
               ]}>
                 {item.necesidades === SIN_NECESIDADES
                   ? "No necesita modelo"
-                  : item.modelo_nombre || "Falta preguntarle qué modelo quiere"}
+                   : nombresModelos.join(", ") || "Falta preguntarle qué modelo quiere"}
               </Text>
               {!!item.necesidades && (
                 <Text style={styles.personNeeds}>
@@ -164,7 +187,8 @@ export function DetalleDiaModal({
             </Pressable>
           </View>
         </View>
-      ))}
+        );
+      })}
 
       {!!fecha && fecha >= hoy && <>
         <Text style={styles.sectionTitle}>AGREGAR UNA PERSONA</Text>
@@ -196,7 +220,9 @@ export function DetalleDiaModal({
         </Pressable>
       ) : (
         <Pressable onPress={onDeshacerMovimiento} style={styles.holidayButton}>
-          <Text style={styles.holidayButtonText}>Quitar movimiento y volver atrás</Text>
+          <Text style={styles.holidayButtonText}>
+            {feriado.tipo === "reajuste" ? "Deshacer último reajuste" : "Deshacer cambio"}
+          </Text>
         </Pressable>
       )}
     </FormModal>
@@ -206,10 +232,13 @@ export function DetalleDiaModal({
 const styles = StyleSheet.create({
   daySummary: { padding: 15, borderRadius: 14, backgroundColor: colors.primarySoft },
   daySummaryTitle: { color: colors.ink, fontSize: 19, fontWeight: "900" },
+  selectedGroup: { marginTop: 8, paddingLeft: 8, borderLeftWidth: 5, color: colors.ink, fontSize: 14, fontWeight: "900" },
   daySummaryText: { color: colors.muted, fontSize: 12, marginTop: 4 },
   movementType: { color: colors.primary, fontSize: 10, fontWeight: "900", letterSpacing: .7, marginTop: 4, textTransform: "uppercase" },
   addGroupInSummary: { minHeight: 42, marginTop: 14, borderRadius: 11, backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
   addGroupInSummaryText: { color: "white", fontSize: 12, fontWeight: "900" },
+  changeGroupButton: { minHeight: 40, marginTop: 9, borderRadius: 11, borderWidth: 1, borderColor: colors.border, backgroundColor: "white", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
+  changeGroupText: { color: colors.primary, fontSize: 11, fontWeight: "900" },
   sectionTitle: { color: colors.muted, fontSize: 11, fontWeight: "900", letterSpacing: .8, marginTop: 4 },
   emptyText: { color: colors.muted, fontSize: 13, fontStyle: "italic" },
   personRow: { minHeight: 58, gap: 9, padding: 11, borderRadius: 12, borderLeftWidth: 5, backgroundColor: "white", borderTopWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: colors.border },

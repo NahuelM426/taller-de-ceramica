@@ -5,6 +5,7 @@ import { generarAgendaHasta } from "@/database/agendaMaintenance";
 import {
   ajustarSaldoPendientes,
   cancelarPendientesPorAusenciasFuturas,
+  saldosPendientesPorCategoria,
 } from "@/database/pendientes";
 import { grupoOcurreEnFecha } from "@/lib/grupos";
 
@@ -12,10 +13,21 @@ const SELECT_ALUMNO = `
   SELECT a.*,
     CASE WHEN a.sin_grupo = 1 THEN NULL ELSE g.nombre END AS grupo_nombre,
     CASE WHEN a.sin_grupo = 1 THEN NULL ELSE g.color END AS grupo_color,
+    MAX(COALESCE(mp.total, 0), 0) -
+      MIN(MAX(COALESCE(mp.extras, 0), 0), MAX(COALESCE(mp.total, 0), 0))
+      AS pendientes_regulares,
+    MIN(MAX(COALESCE(mp.extras, 0), 0), MAX(COALESCE(mp.total, 0), 0))
+      AS pendientes_extra,
     m.nombre AS molde_nombre
   FROM alumnos a
   LEFT JOIN grupos g ON g.id = a.grupo_id
   LEFT JOIN moldes m ON m.id = a.molde_id
+  LEFT JOIN (
+    SELECT alumno_id, SUM(delta) AS total,
+      SUM(CASE WHEN categoria = 'extra' THEN delta ELSE 0 END) AS extras
+    FROM movimientos_pendientes
+    GROUP BY alumno_id
+  ) mp ON mp.alumno_id = a.id
 `;
 
 export const alumnoRepository = {
@@ -100,6 +112,24 @@ export const alumnoRepository = {
   async eliminar(id: number) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
+      const extras = await db.getAllAsync<{ mes: string; cantidad: number }>(
+        `SELECT pago_extra_mes AS mes, COUNT(*) AS cantidad
+         FROM agenda_alumnos
+         WHERE alumno_id = ? AND estado = 'programada' AND pago_extra_mes IS NOT NULL
+         GROUP BY pago_extra_mes`,
+        id
+      );
+      for (const extra of extras) {
+        await db.runAsync(
+          `UPDATE pagos_alumnos
+           SET clases_extra_usadas = MAX(clases_extra_usadas - ?, 0), actualizado_en = ?
+           WHERE alumno_id = ? AND mes = ?`,
+          extra.cantidad,
+          new Date().toISOString(),
+          id,
+          extra.mes
+        );
+      }
       await db.runAsync("UPDATE alumnos SET activo = 0 WHERE id = ?", id);
       await db.runAsync(
         "UPDATE agenda_alumnos SET estado = 'cancelada' WHERE alumno_id = ? AND estado = 'programada'",
@@ -117,7 +147,8 @@ export const alumnoRepository = {
         id
       );
       if (!alumno) throw new Error("La persona ya no está disponible");
-      await ajustarSaldoPendientes(db, id, total);
+      const saldos = await saldosPendientesPorCategoria(db, id);
+      await ajustarSaldoPendientes(db, id, total + saldos.extras);
     });
   },
 
@@ -165,7 +196,8 @@ export const alumnoRepository = {
          VALUES (?,?,?,?, 'programada')
          ON CONFLICT(alumno_id,fecha) DO UPDATE SET
            grupo_id = excluded.grupo_id, tipo = excluded.tipo, estado = 'programada',
-           cubre_agenda_id = NULL, origen_agenda_id = NULL`,
+           cubre_agenda_id = NULL, origen_agenda_id = NULL, pago_extra_mes = NULL,
+           extra_adeudada = 0`,
         id, grupoId, fechaInicio, tipo
       );
     });

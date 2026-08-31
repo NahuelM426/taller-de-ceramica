@@ -173,6 +173,11 @@ describe("copia y restauración de datos", () => {
   });
 
   test("acepta una copia anterior de formato 2 sin historial de reajustes", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      `INSERT INTO feriados (fecha,grupo_id,motivo,fecha_recuperacion,tipo)
+       VALUES ('2026-08-14',1,'Feriado','2026-08-15','feriado')`
+    );
     await compartirCopiaSeguridad();
     const uriActual = ultimoArchivoCompartido();
     assert.ok(uriActual);
@@ -182,6 +187,9 @@ describe("copia y restauración de datos", () => {
     };
     contenido.versionFormato = 2;
     delete contenido.tablas.reajustes_grupo;
+    for (const movimiento of contenido.tablas.feriados as Array<Record<string, unknown>>) {
+      delete movimiento.grupo_id;
+    }
     const archivoAnterior = new File("memory://cache/respaldo-v2.json");
     archivoAnterior.create();
     archivoAnterior.write(JSON.stringify(contenido));
@@ -190,10 +198,204 @@ describe("copia y restauración de datos", () => {
     const seleccion = await elegirCopiaSeguridad();
     assert.ok(seleccion);
     await restaurarCopiaSeguridad(seleccion.copia);
-    const db = await databasePromise;
     const historiales = await db.getFirstAsync<{ total: number }>(
       "SELECT COUNT(*) AS total FROM reajustes_grupo"
     );
+    const movimientoLegacy = await db.getFirstAsync<{ grupo_id: number }>(
+      "SELECT grupo_id FROM feriados WHERE fecha = '2026-08-14'"
+    );
     assert.equal(historiales?.total, 0);
+    assert.equal(movimientoLegacy?.grupo_id, 0);
+  });
+
+  test("respalda y restaura todos los modelos elegidos para una persona", async () => {
+    const db = await databasePromise;
+    await db.execAsync(`
+      INSERT INTO modelos (id,nombre) VALUES (1,'Taza'),(2,'Plato');
+      UPDATE agenda_alumnos SET modelo_id=1 WHERE id=1;
+      INSERT INTO agenda_modelos (agenda_id,modelo_id,orden)
+      VALUES (1,1,0),(1,2,1);
+    `);
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync("DELETE FROM agenda_modelos WHERE agenda_id=1");
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const relaciones = await db.getAllAsync<{ modelo_id: number; orden: number }>(
+      "SELECT modelo_id,orden FROM agenda_modelos WHERE agenda_id=1 ORDER BY orden"
+    );
+    assert.deepEqual(relaciones, [
+      { modelo_id: 1, orden: 0 },
+      { modelo_id: 2, orden: 1 },
+    ]);
+  });
+
+  test("respalda y restaura el historial mensual de pagos", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      `INSERT INTO pagos_alumnos
+        (alumno_id,mes,pagado,clases_pagadas,clases_extra,clases_extra_usadas,fecha_pago,actualizado_en)
+       VALUES (1,'2026-08',1,4,2,1,'2026-08-05T12:00:00.000Z','2026-08-05T12:00:00.000Z')`
+    );
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync("DELETE FROM pagos_alumnos");
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const pago = await db.getFirstAsync<{
+      pagado: number; clases_pagadas: number; clases_extra: number; clases_extra_usadas: number;
+    }>("SELECT pagado,clases_pagadas,clases_extra,clases_extra_usadas FROM pagos_alumnos WHERE alumno_id=1 AND mes='2026-08'");
+    assert.deepEqual(pago, {
+      pagado: 1, clases_pagadas: 4, clases_extra: 2, clases_extra_usadas: 1,
+    });
+  });
+
+  test("acepta una copia de formato 5 sin pagos mensuales", async () => {
+    const db = await databasePromise;
+    await compartirCopiaSeguridad();
+    const uriActual = ultimoArchivoCompartido();
+    assert.ok(uriActual);
+    const contenido = JSON.parse(await new File(uriActual).text()) as {
+      versionFormato: number;
+      tablas: Record<string, unknown>;
+    };
+    contenido.versionFormato = 5;
+    delete contenido.tablas.pagos_alumnos;
+    const archivoAnterior = new File("memory://cache/respaldo-v5.json");
+    archivoAnterior.create();
+    archivoAnterior.write(JSON.stringify(contenido));
+
+    elegirDocumentoPrueba(archivoAnterior.uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const pagos = await db.getFirstAsync<{ total: number }>(
+      "SELECT COUNT(*) AS total FROM pagos_alumnos"
+    );
+    assert.equal(pagos?.total, 0);
+  });
+
+  test("restaura una copia de formato 6 anterior a los créditos de extras", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      `INSERT INTO pagos_alumnos
+        (alumno_id,mes,pagado,clases_pagadas,clases_extra,fecha_pago,actualizado_en)
+       VALUES (1,'2026-08',1,4,2,'2026-08-05','2026-08-05')`
+    );
+    await compartirCopiaSeguridad();
+    const uriActual = ultimoArchivoCompartido();
+    assert.ok(uriActual);
+    const contenido = JSON.parse(await new File(uriActual).text()) as {
+      versionFormato: number;
+      tablas: Record<string, Array<Record<string, unknown>>>;
+    };
+    contenido.versionFormato = 6;
+    for (const pago of contenido.tablas.pagos_alumnos) delete pago.clases_extra_usadas;
+    for (const agenda of contenido.tablas.agenda_alumnos) {
+      delete agenda.pago_extra_mes;
+      delete agenda.extra_adeudada;
+    }
+    const archivoAnterior = new File("memory://cache/respaldo-v6.json");
+    archivoAnterior.create();
+    archivoAnterior.write(JSON.stringify(contenido));
+
+    elegirDocumentoPrueba(archivoAnterior.uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const pago = await db.getFirstAsync<{ clases_extra: number; clases_extra_usadas: number }>(
+      "SELECT clases_extra,clases_extra_usadas FROM pagos_alumnos WHERE alumno_id=1 AND mes='2026-08'"
+    );
+    const agenda = await db.getFirstAsync<{
+      pago_extra_mes: string | null; extra_adeudada: number;
+    }>(
+      "SELECT pago_extra_mes,extra_adeudada FROM agenda_alumnos WHERE id=1"
+    );
+    assert.deepEqual(pago, { clases_extra: 2, clases_extra_usadas: 0 });
+    assert.deepEqual(agenda, { pago_extra_mes: null, extra_adeudada: 0 });
+  });
+
+  test("respalda y restaura una clase extra que todavía se debe", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      "UPDATE agenda_alumnos SET tipo='manual', extra_adeudada=1 WHERE id=1"
+    );
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync("UPDATE agenda_alumnos SET extra_adeudada=0 WHERE id=1");
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const agenda = await db.getFirstAsync<{ extra_adeudada: number }>(
+      "SELECT extra_adeudada FROM agenda_alumnos WHERE id=1"
+    );
+    assert.equal(agenda?.extra_adeudada, 1);
+  });
+
+  test("respalda y restaura pendientes de clases extra", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      "UPDATE movimientos_pendientes SET categoria='extra' WHERE alumno_id=1"
+    );
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync(
+      "UPDATE movimientos_pendientes SET categoria='regular' WHERE alumno_id=1"
+    );
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const movimiento = await db.getFirstAsync<{ categoria: string }>(
+      "SELECT categoria FROM movimientos_pendientes WHERE alumno_id=1"
+    );
+    assert.equal(movimiento?.categoria, "extra");
+  });
+
+  test("una copia de formato 8 restaura sus pendientes como habituales", async () => {
+    const db = await databasePromise;
+    await compartirCopiaSeguridad();
+    const uriActual = ultimoArchivoCompartido();
+    assert.ok(uriActual);
+    const contenido = JSON.parse(await new File(uriActual).text()) as {
+      versionFormato: number;
+      tablas: Record<string, Array<Record<string, unknown>>>;
+    };
+    contenido.versionFormato = 8;
+    for (const movimiento of contenido.tablas.movimientos_pendientes) {
+      delete movimiento.categoria;
+    }
+    const archivoAnterior = new File("memory://cache/respaldo-v8.json");
+    archivoAnterior.create();
+    archivoAnterior.write(JSON.stringify(contenido));
+
+    elegirDocumentoPrueba(archivoAnterior.uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const movimiento = await db.getFirstAsync<{ categoria: string }>(
+      "SELECT categoria FROM movimientos_pendientes WHERE alumno_id=1"
+    );
+    assert.equal(movimiento?.categoria, "regular");
   });
 });

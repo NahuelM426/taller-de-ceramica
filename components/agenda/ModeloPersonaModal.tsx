@@ -13,19 +13,19 @@ import { Modelo } from "@/models";
 const SIN_NECESIDADES = "No necesita";
 
 export function ModeloPersonaModal({
-  visible, alumnoNombre, modelos, modeloId, necesidadesIniciales,
+  visible, alumnoNombre, modelos, modeloIds, necesidadesIniciales,
   onClose, onConfirm,
 }: {
   visible: boolean;
   alumnoNombre: string;
   modelos: Modelo[];
-  modeloId: number | null;
+  modeloIds: number[];
   necesidadesIniciales: string;
   onClose: () => void;
-  onConfirm: (modeloId: number | null, necesidades: string) => Promise<boolean>;
+  onConfirm: (modeloIds: number[], necesidades: string) => Promise<boolean>;
 }) {
   const [busqueda, setBusqueda] = useState("");
-  const [seleccion, setSeleccion] = useState<number | null>(modeloId);
+  const [seleccion, setSeleccion] = useState<number[]>(modeloIds);
   const [necesidades, setNecesidades] = useState(necesidadesIniciales);
   const [necesitaAlgo, setNecesitaAlgo] = useState<boolean | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -34,16 +34,16 @@ export function ModeloPersonaModal({
   useEffect(() => {
     if (!visible) return;
     setBusqueda("");
-    setSeleccion(modeloId);
+    setSeleccion(modeloIds);
     setNecesidades(necesidadesIniciales);
     setNecesitaAlgo(
       necesidadesIniciales === SIN_NECESIDADES
         ? false
-        : modeloId || necesidadesIniciales ? true : null
+        : modeloIds.length || necesidadesIniciales ? true : null
     );
     setGuardando(false);
     setVisorIndex(null);
-  }, [visible, modeloId, necesidadesIniciales]);
+  }, [visible, modeloIds, necesidadesIniciales]);
 
   const visibles = useMemo(() => {
     const termino = busqueda.trim().toLocaleLowerCase("es");
@@ -53,18 +53,24 @@ export function ModeloPersonaModal({
       (modelo.descripcion || "").toLocaleLowerCase("es").includes(termino)
     );
   }, [modelos, busqueda]);
-  const modeloElegido = modelos.find(item => item.id === seleccion);
+  const modeloElegido = modelos.find(item => item.id === seleccion.at(-1));
 
   const elegirModelo = (modelo: Modelo) => {
-    if (seleccion !== modelo.id) setNecesidades("");
-    setSeleccion(modelo.id);
+    setSeleccion(actual => actual.includes(modelo.id)
+      ? actual.filter(id => id !== modelo.id)
+      : [...actual, modelo.id]);
+  };
+
+  const mostrarModelo = (modelo: Modelo) => {
+    setSeleccion(actual => actual.includes(modelo.id) ? actual : [...actual, modelo.id]);
+    setVisorIndex(0);
   };
 
   const confirmar = async () => {
-    if (necesitaAlgo === null || (necesitaAlgo && !seleccion) || guardando) return;
+    if (necesitaAlgo === null || (necesitaAlgo && !seleccion.length) || guardando) return;
     setGuardando(true);
     const guardado = await onConfirm(
-      necesitaAlgo ? seleccion : null,
+      necesitaAlgo ? seleccion : [],
       necesitaAlgo ? necesidades : SIN_NECESIDADES
     );
     if (!guardado) setGuardando(false);
@@ -106,7 +112,7 @@ export function ModeloPersonaModal({
                 selected={necesitaAlgo === false}
                 onPress={() => {
                   setNecesitaAlgo(false);
-                  setSeleccion(null);
+                  setSeleccion([]);
                   setNecesidades(SIN_NECESIDADES);
                 }}
               />
@@ -136,24 +142,24 @@ export function ModeloPersonaModal({
               <Pressable
                   key={modelo.id}
                   onPress={() => elegirModelo(modelo)}
-                  style={[styles.model, seleccion === modelo.id && styles.modelOn]}
+                  style={[styles.model, seleccion.includes(modelo.id) && styles.modelOn]}
               >
                 {!!modelo.imagen_1 && (
-                  <Pressable onPress={() => { elegirModelo(modelo); setVisorIndex(0); }}>
+                  <Pressable onPress={() => mostrarModelo(modelo)}>
                     <Image source={{ uri: modelo.imagen_1 }} resizeMode="cover" style={styles.modelThumb} />
                   </Pressable>
                 )}
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.modelName, seleccion === modelo.id && { color: colors.primary }]}>{modelo.nombre}</Text>
+                    <Text style={[styles.modelName, seleccion.includes(modelo.id) && { color: colors.primary }]}>{modelo.nombre}</Text>
                     <Text style={[styles.clayType, !modelo.tipo_arcilla && { color: colors.warning }]}>
                       {modelo.tipo_arcilla ? `Arcilla: ${modelo.tipo_arcilla}` : "Tipo de arcilla sin definir"}
                     </Text>
                     {!!modelo.descripcion && <Text style={styles.modelDescription}>{modelo.descripcion}</Text>}
                   </View>
                   <Ionicons
-                    name={seleccion === modelo.id ? "checkbox" : "square-outline"}
+                    name={seleccion.includes(modelo.id) ? "checkbox" : "square-outline"}
                     size={21}
-                    color={seleccion === modelo.id ? colors.primary : colors.muted}
+                    color={seleccion.includes(modelo.id) ? colors.primary : colors.muted}
                   />
                 </Pressable>
               ))}
@@ -165,7 +171,7 @@ export function ModeloPersonaModal({
                 </View>
               )}
 
-              {!!seleccion && (
+              {!!seleccion.length && (
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>Molde o material necesario</Text>
                   <TextInput
@@ -195,11 +201,11 @@ export function ModeloPersonaModal({
               <Text style={styles.secondaryText}>Cancelar</Text>
             </Pressable>
             <Pressable
-              disabled={necesitaAlgo === null || (necesitaAlgo && !seleccion) || guardando}
+              disabled={necesitaAlgo === null || (necesitaAlgo && !seleccion.length) || guardando}
               onPress={confirmar}
-              style={[styles.confirmButton, (necesitaAlgo === null || (necesitaAlgo && !seleccion) || guardando) && { opacity: .4 }]}
+              style={[styles.confirmButton, (necesitaAlgo === null || (necesitaAlgo && !seleccion.length) || guardando) && { opacity: .4 }]}
             >
-              <Text style={styles.confirmText}>{guardando ? "Guardando..." : "Guardar modelo"}</Text>
+              <Text style={styles.confirmText}>{guardando ? "Guardando..." : "Guardar modelos"}</Text>
             </Pressable>
           </View>
         </View>

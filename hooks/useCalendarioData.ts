@@ -96,6 +96,7 @@ export function useCalendarioData(
     cargar,
     personasSeleccionadas: seleccion.personas,
     feriadoSeleccionado: seleccion.feriado,
+    gruposDelDiaSeleccionado: seleccion.gruposDelDia,
     grupoDestinoSeleccionado: seleccion.grupoDestino,
     idsOcupadosSeleccionados: seleccion.idsOcupados,
   };

@@ -1,4 +1,4 @@
-import { Grupo } from "@/models";
+import { AgendaAlumno, Grupo } from "@/models";
 
 const DIA_MS = 86_400_000;
 
@@ -26,6 +26,37 @@ export function grupoOcurreEnFecha(
   const turnoInicial = aparicionDelDiaEnElMes(inicio) % 2;
   const aparicion = aparicionDelDiaEnElMes(dia);
   return aparicion <= 4 && aparicion % 2 === turnoInicial;
+}
+
+export function agendaRepresentaClaseHabitual(
+  item: Pick<AgendaAlumno, "tipo" | "estado" | "feriado_tipo_origen">
+) {
+  return item.estado !== "cancelada" && (
+    item.tipo === "regular" ||
+    (item.tipo === "manual" && item.feriado_tipo_origen === "regular")
+  );
+}
+
+export function grupoOcurreEnFechaConsiderandoAgenda(
+  grupo: Grupo,
+  fecha: string,
+  agenda: AgendaAlumno[]
+) {
+  if (!grupoOcurreEnFecha(grupo, fecha)) return false;
+  if (grupo.frecuencia !== "quincenal") return true;
+
+  const mes = fecha.slice(0, 7);
+  const fechasHabituales = new Set(
+    agenda
+      .filter(item =>
+        item.grupo_id === grupo.id &&
+        item.fecha.slice(0, 7) === mes &&
+        agendaRepresentaClaseHabitual(item)
+      )
+      .map(item => item.fecha)
+  );
+
+  return fechasHabituales.has(fecha) || fechasHabituales.size < 2;
 }
 
 export function siguienteFechaDelGrupo(grupo: Grupo, desde: string) {

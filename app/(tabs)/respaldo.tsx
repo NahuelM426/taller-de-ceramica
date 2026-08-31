@@ -156,7 +156,7 @@ export default function RespaldoScreen() {
             {resumen ? (
               <Text style={styles.summaryText}>
                 {resumen.alumnos} alumnos · {resumen.grupos} grupos · {resumen.modelos} modelos{"\n"}
-                También incluye agenda, pendientes, feriados y fotos.
+                También incluye agenda, pendientes, pagos, feriados y fotos.
               </Text>
             ) : <ActivityIndicator color={colors.primary} style={{ alignSelf: "flex-start" }} />}
           </View>

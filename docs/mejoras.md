@@ -190,3 +190,140 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   oscuro o el botón Atrás de Android.
 - Al elegir un motivo se abre el selector de fecha existente. No se modificaron
   repositorios ni reglas de fechas, pendientes o movimientos.
+
+### Logo y calendario compartible
+
+- El logo de la aplicación ahora muestra correctamente “Menudo Cerámica”.
+- La vista previa permite desmarcar grupos para excluirlos tanto del calendario
+  compartido como de su leyenda.
+- El botón Compartir respeta el área segura inferior de Android y ya no queda
+  detrás de los botones de navegación del teléfono.
+
+### Compilación Android local
+
+- Se agregó `npm run build:aab:local` para generar el AAB firmado sin consumir
+  compilaciones mensuales de EAS.
+- El comando usa el JDK de Android Studio, el Android SDK local y las credenciales
+  descargadas desde EAS, sin guardar contraseñas en el repositorio.
+- `credentials.json` y las claves `.jks` permanecen excluidos de Git.
+## Movimientos cuando hay varios grupos el mismo día
+
+- Al tocar una fecha con dos o más grupos, primero se elige cuál se quiere ver.
+- El detalle muestra únicamente las personas del grupo seleccionado.
+- Feriado, Compromiso y Reajuste se guardan por fecha y grupo, por lo que mover uno no modifica al resto.
+- Se puede volver al selector desde el detalle para revisar otro grupo del mismo día.
+- Las copias anteriores siguen siendo compatibles; sus movimientos de día completo se restauran como registros generales.
+
+### Reajuste hacia una fecha anterior
+
+- Un grupo de dos veces por mes ahora puede reajustarse tanto hacia una fecha
+  posterior como hacia una fecha anterior, siempre dentro de fechas futuras.
+- Por ejemplo, el turno 08/09 y 22/09 puede reajustarse al 01/09 para continuar
+  el 15/09 y mantener desde allí el patrón de primera y tercera semana.
+- La fecha debe ser distinta, coincidir con el día semanal del grupo y no puede
+  estar ocupada por otra clase del alumno.
+- El cambio conserva su transacción, historial y opción de deshacer. Ante un
+  conflicto no se modifica ninguna clase parcialmente.
+- En el mes de transición se cuentan las clases habituales que ya quedaron
+  antes de la fecha reajustada. Así, al mover 20/10 al 13/10 y conservar la
+  clase del 06/10, no se genera una tercera clase el 27/10.
+- Las personas agregadas a esa clase como recuperación también se trasladan a
+  la nueva fecha, conservando modelo, materiales y movimientos de pendientes.
+  Al deshacer el reajuste vuelven a la fecha original.
+
+### Limpieza del calendario al eliminar grupos
+
+- Al eliminar un grupo se quitan del calendario sus marcas de Reajuste,
+  Feriado y Compromiso.
+- Las marcas generales y las pertenecientes a otros grupos no se modifican.
+- Los movimientos antiguos vinculados a grupos que ya estaban eliminados
+  también dejan de mostrarse al actualizar la aplicación.
+- Los reajustes creados por versiones anteriores como movimientos generales
+  se vinculan con su historial; si el grupo ya no está activo, tampoco se
+  muestran como cuadros sueltos sin cinta de color.
+# Corrección de la transición mensual del reajuste
+
+- Un reajuste hacia una fecha anterior del mismo mes conserva como máximo las dos clases reales de ese mes. Por ejemplo, al mover el 15 al 8 se mantienen el 1 y el 8, sin crear el 22.
+- La generación incremental consulta también las clases anteriores del mes para no volver a crear una tercera fecha al abrir nuevamente la aplicación.
+- Se repara una agenda ya afectada cancelando la tercera fecha incorrecta y las vistas dejan de mostrar grupos teóricos vacíos con cantidad 0.
+# Calendario limpio y modelos múltiples
+
+- El calendario mensual deja de colorear o rotular los días con “Feriado”, “Compromiso” o “Reajuste”.
+- Un grupo movido ya no se abre desde la fecha original. En la fecha de destino, al final de su detalle, aparece **Deshacer cambio** para restaurarlo.
+- Cada persona puede tener varios modelos asignados en una misma clase. El selector permite marcar o desmarcar todas las opciones necesarias.
+- Los modelos múltiples se incluyen en la preparación de la clase, las notificaciones y las copias de seguridad.
+- Los modelos únicos guardados por versiones anteriores se migran automáticamente sin perder información.
+# Pagos mensuales de alumnos
+
+- El control de pagos se guarda por alumno y por mes, conservando el historial.
+- En Alumnos se muestra un aviso con la cantidad de personas que todavía no pagaron.
+- Se agregó el filtro **No pagaron**, junto al filtro de pendientes.
+- Cada pago permite registrar cuota paga o impaga y si corresponde a 2 o 4 clases.
+- Las copias de seguridad incluyen el historial de pagos y siguen aceptando copias anteriores.
+
+## Recordatorio de pagos y clases extra pagadas
+
+- En **Alumnos** se puede activar o desactivar un recordatorio mensual y elegir
+  el día (del 1 al 28) y la hora exacta del aviso.
+- La notificación informa cuántos alumnos todavía no pagaron y muestra sus
+  nombres. Al registrar un pago se reprograma para mantener la lista actualizada.
+- Los créditos de clases extra pagadas de versiones anteriores se conservan en
+  la base y en los respaldos, pero ya no se cargan ni se ofrecen desde la interfaz.
+- La migración agrega los contadores sin perder pagos existentes y las copias de
+  seguridad anteriores continúan restaurándose con cero extras utilizadas.
+- La pantalla de Alumnos permite alternar entre **Este mes** y **Mes siguiente**,
+  para registrar por adelantado un pago recibido durante los últimos días del mes.
+- El formulario de pago ya no muestra importes, tarifas ni clases extra; solamente
+  registra el estado y la cantidad de clases mensuales pagadas.
+
+## Cierre mensual y extras a cobrar
+
+- Al comenzar un mes nuevo, las clases de una cuota paga que no llegaron a
+  utilizarse en el mes anterior se suman automáticamente como pendientes.
+- El cierre es idempotente: volver a abrir la aplicación no duplica el saldo y
+  una ausencia que ya generó un pendiente no vuelve a contarse.
+- Al agregar una persona a una fecha se puede elegir **Clase extra a cobrar**.
+  La persona queda programada sin consumir un crédito de extra pagada.
+- La clase se identifica en Hoy, en el detalle del calendario y en Alumnos. El
+  filtro **Extras a cobrar** permite encontrar rápidamente a quienes las deben.
+- La cuota mensual registra solamente si pagó y si corresponde a 2 o 4 clases;
+  ya no permite cargar clases extra por adelantado.
+- Las copias de seguridad conservan este estado y siguen aceptando copias de
+  versiones anteriores.
+
+## Preparación de la versión 1.0.10
+
+- La versión pública se actualizó a `1.0.10` con `versionCode` 11 para Google Play.
+- La versión de Expo y la configuración nativa de Android quedaron sincronizadas
+  para generar el mismo AAB tanto con EAS como con la compilación local.
+- Las compilaciones remotas regeneran Android desde `app.json` y la compilación
+  local ejecuta Prebuild antes de Gradle, evitando versiones, íconos o permisos
+  nativos desactualizados.
+- El flujo visible de extras queda unificado en **Agregar persona > Clase extra a
+  cobrar**. Se retiraron la carga de extras desde Pago, el uso de extras pagadas y
+  su filtro del selector.
+- Los créditos antiguos se conservan internamente para no perder datos al actualizar
+  o restaurar copias de seguridad, pero no pueden cargarse ni consumirse desde la interfaz.
+- Las clases extra ya agendadas como **a cobrar** pueden saldarse junto con la
+  cuota mensual o por separado mediante **Cobrar solo extras**. Cobrar una deuda
+  no crea créditos de extras para fechas futuras ni altera la cuota cuando se usa
+  la acción separada.
+# Pendientes y cobros de clases extra
+
+- Una clase extra ya pagada que luego se marca como **No viene** queda registrada como una **extra a favor** del alumno.
+- Si una clase extra ya pagada se quita de la fecha, también queda como **extra a favor**, aunque se haya cobrado sola y no junto con la cuota.
+- Las clases extra a cobrar que finalmente no se usan dejan de aparecer como deuda mientras están marcadas como ausencia.
+- Al agregar una persona a una fecha se puede elegir **Recupera una clase extra pendiente**, separada de las recuperaciones habituales.
+- En **Alumnos**, el filtro **Con pendientes** permite separar clases habituales y extras a favor.
+- El filtro **No pagaron** permite separar cuotas mensuales y extras a cobrar.
+- Los respaldos guardan esta distinción y las copias anteriores continúan siendo compatibles.
+
+## Preparación de la versión 1.0.11
+
+- La versión pública se actualizó a `1.0.11` con `versionCode` 12 para Google Play.
+- En Alumnos se reorganizaron las acciones: editar queda arriba, cargar pendientes
+  junto al nombre y los pagos en la zona inferior de la tarjeta.
+- Los saldos de clases habituales y extras a favor se muestran juntos debajo del
+  nombre para identificar rápidamente lo que el taller debe a cada alumno.
+- Una clase extra pagada que se cancela conserva el crédito a favor, incluso si
+  se había cobrado por separado.

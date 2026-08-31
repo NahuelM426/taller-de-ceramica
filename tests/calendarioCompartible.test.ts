@@ -4,11 +4,12 @@ import { describe, test } from "node:test";
 import {
   alturaCeldaCalendarioCompartible,
   ejecutarCompartirCalendarioUnaVez,
+  filtrarGruposCompartibles,
   nombreArchivoCalendario,
   puedeCompartirVistaPrevia,
   prepararCalendarioCompartible,
 } from "../lib/calendarioCompartible";
-import type { Grupo } from "../models";
+import type { AgendaAlumno, Grupo } from "../models";
 
 function grupo(overrides: Partial<Grupo> = {}): Grupo {
   return {
@@ -27,10 +28,41 @@ function grupo(overrides: Partial<Grupo> = {}): Grupo {
   };
 }
 
+function agendaHabitual(id: number, fecha: string): AgendaAlumno {
+  return {
+    id,
+    alumno_id: 1,
+    alumno_nombre: "Ana",
+    grupo_id: 1,
+    grupo_nombre: "Martes",
+    grupo_color: "#C87551",
+    hora: "14:00",
+    fecha,
+    tipo: "regular",
+    estado: "programada",
+    modelo_id: null,
+    modelo_nombre: null,
+    necesidades: null,
+  };
+}
+
 const fechasGrupo = (data: ReturnType<typeof prepararCalendarioCompartible>, grupoId: number) =>
   data.celdas.filter(celda => celda.marcas.some(marca => marca.grupoId === grupoId)).map(celda => celda.fecha);
 
 describe("calendario compartible", () => {
+  test("permite excluir grupos de la imagen compartida", () => {
+    const grupos = [
+      grupo(),
+      grupo({ id: 2, nombre: "Viernes", dia: 5 }),
+      grupo({ id: 3, nombre: "Inactivo", activo: 0 }),
+    ];
+    const incluidos = filtrarGruposCompartibles(grupos, [2, 3]);
+    assert.deepEqual(incluidos.map(item => item.id), [2]);
+    const data = prepararCalendarioCompartible(new Date(2026, 7, 1), incluidos);
+    assert.deepEqual(data.leyenda.map(item => item.nombre), ["Viernes"]);
+    assert.equal(JSON.stringify(data).includes("Lunes tarde"), false);
+  });
+
   test("un grupo semanal aparece en todas sus fechas habituales", () => {
     assert.deepEqual(
       fechasGrupo(prepararCalendarioCompartible(new Date(2026, 7, 1), [grupo()]), 1),
@@ -59,6 +91,21 @@ describe("calendario compartible", () => {
       fechasGrupo(prepararCalendarioCompartible(new Date(2026, 9, 1), [reajustado]), 1),
       ["2026-10-13", "2026-10-27"]
     );
+  });
+
+  test("el calendario compartido tampoco agrega el 22 si el mes ya tiene 1 y 8", () => {
+    const reajustado = grupo({
+      dia: 2,
+      frecuencia: "quincenal",
+      fecha_inicio: "2026-09-08",
+    });
+    const data = prepararCalendarioCompartible(
+      new Date(2026, 8, 1),
+      [reajustado],
+      [agendaHabitual(1, "2026-09-01"), agendaHabitual(2, "2026-09-08")]
+    );
+
+    assert.deepEqual(fechasGrupo(data, 1), ["2026-09-01", "2026-09-08"]);
   });
 
   test("movimientos, recuperaciones y ausencias no cambian sus datos", () => {

@@ -1,9 +1,27 @@
 import { AgendaAlumno, Alumno } from "@/models";
 
 export type FiltroAlumnos = "todos" | "pendientes";
-export type TipoOcupacion = "recuperacion" | "cambio" | "fijar";
+export type TipoOcupacion =
+  | "recuperacion"
+  | "recuperacion_extra"
+  | "extra_debe"
+  | "cambio"
+  | "fijar";
 
-export function ordenarAlumnosParaElegir(alumnos: Alumno[]) {
+export function pendientesExtraAlumno(alumno: Alumno) {
+  return Math.max(alumno.pendientes_extra || 0, 0);
+}
+
+export function pendientesRegularesAlumno(alumno: Alumno) {
+  if (typeof alumno.pendientes_regulares === "number") {
+    return Math.max(alumno.pendientes_regulares, 0);
+  }
+  return Math.max(alumno.pendientes - pendientesExtraAlumno(alumno), 0);
+}
+
+export function ordenarAlumnosParaElegir(
+  alumnos: Alumno[]
+) {
   return [...alumnos].sort((a, b) =>
     Number(b.pendientes > 0) - Number(a.pendientes > 0) ||
     b.pendientes - a.pendientes ||
@@ -43,6 +61,7 @@ export function ocupacionInicial(
   alumno: Alumno | undefined,
   origen: AgendaAlumno | undefined
 ): TipoOcupacion | null {
-  if (alumno?.pendientes) return "recuperacion";
+  if (alumno && pendientesRegularesAlumno(alumno) > 0) return "recuperacion";
+  if (alumno && pendientesExtraAlumno(alumno) > 0) return "recuperacion_extra";
   return origen ? "cambio" : null;
 }

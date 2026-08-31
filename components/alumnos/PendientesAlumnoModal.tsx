@@ -14,7 +14,9 @@ export function PendientesAlumnoModal({ alumno, onClose, onConfirm }: {
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
-    if (alumno) setCantidad(String(alumno.pendientes));
+    if (alumno) {
+      setCantidad(String(alumno.pendientes_regulares ?? alumno.pendientes));
+    }
   }, [alumno]);
 
   const total = Math.max(0, Math.floor(Number(cantidad) || 0));
@@ -48,11 +50,11 @@ export function PendientesAlumnoModal({ alumno, onClose, onConfirm }: {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.personName}>{alumno?.nombre}</Text>
-              <Text style={styles.personText}>Cargá el total que tiene pendiente hoy</Text>
+            <Text style={styles.personText}>Cargá sus clases habituales pendientes</Text>
             </View>
           </View>
 
-          <Text style={styles.label}>Cantidad total pendiente</Text>
+          <Text style={styles.label}>Clases habituales pendientes</Text>
           <View style={styles.stepper}>
             <Pressable accessibilityLabel="Restar un día" onPress={() => cambiar(-1)} style={styles.stepButton}>
               <Ionicons name="remove" size={27} color={colors.primary} />

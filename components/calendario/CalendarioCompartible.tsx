@@ -25,7 +25,7 @@ export function CalendarioCompartible({
     <View style={styles.sheet} collapsable={false}>
       <View style={styles.brand}>
         <Image
-          source={require("../../assets/mundo-ceramica-logo.png")}
+          source={require("../../assets/menudo-ceramica-logo.png")}
           style={styles.logo}
           onLoadStart={() => { logoFallo.current = false; }}
           onError={() => {

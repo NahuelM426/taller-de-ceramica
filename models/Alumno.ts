@@ -12,6 +12,8 @@ export interface Alumno {
   molde_id: number | null;
   molde_nombre?: string | null;
   pendientes: number;
+  pendientes_regulares?: number;
+  pendientes_extra?: number;
   fecha_inicio: string | null;
 }
 

@@ -129,4 +129,72 @@ describe("reajuste a dos clases por mes", () => {
       { fecha: "2026-10-13", estado: "programada" },
     ]);
   });
+
+  test("no vuelve a generar el 22 cuando el reajuste ya dejó las clases el 1 y el 8", async () => {
+    await reiniciarBasePrueba();
+    const db = await databasePromise;
+    await crearEsquema(db as unknown as Parameters<typeof crearEsquema>[0]);
+    await db.execAsync(`
+      INSERT INTO grupos
+        (id,nombre,dia,hora,capacidad,color,frecuencia,fecha_inicio)
+      VALUES (1,'Martes',2,'18:00',4,'#315B50','quincenal','2026-09-08');
+      INSERT INTO alumnos
+        (id,nombre,frecuencia,grupo_id,fecha_inicio)
+      VALUES (1,'Ana','quincenal',1,'2026-09-01');
+      INSERT INTO agenda_alumnos
+        (alumno_id,grupo_id,fecha,tipo,estado)
+      VALUES
+        (1,1,'2026-09-01','regular','programada'),
+        (1,1,'2026-09-08','regular','programada');
+    `);
+
+    assert.equal(
+      await generarAgendaHasta(1, 1, "2026-09-20", "2026-09-30"),
+      0
+    );
+    const fechas = await db.getAllAsync<{ fecha: string }>(
+      `SELECT fecha FROM agenda_alumnos
+       WHERE estado != 'cancelada' ORDER BY fecha`
+    );
+    assert.deepEqual(fechas.map(item => item.fecha), ["2026-09-01", "2026-09-08"]);
+  });
+
+  test("repara un reajuste anterior que dejó una tercera clase vacía o generada", async () => {
+    await reiniciarBasePrueba();
+    const db = await databasePromise;
+    await crearEsquema(db as unknown as Parameters<typeof crearEsquema>[0]);
+    await db.execAsync(`
+      INSERT INTO grupos
+        (id,nombre,dia,hora,capacidad,color,frecuencia,fecha_inicio)
+      VALUES (1,'Martes',2,'18:00',4,'#315B50','quincenal','2026-09-08');
+      INSERT INTO alumnos
+        (id,nombre,frecuencia,grupo_id,fecha_inicio)
+      VALUES (1,'Ana','quincenal',1,'2026-09-01');
+      INSERT INTO agenda_alumnos
+        (id,alumno_id,grupo_id,fecha,tipo,estado)
+      VALUES
+        (1,1,1,'2026-09-01','regular','programada'),
+        (2,1,1,'2026-09-08','regular','programada'),
+        (3,1,1,'2026-09-22','regular','programada');
+      INSERT INTO reajustes_grupo
+        (grupo_id,fecha_origen,fecha_destino,fecha_inicio_anterior,
+         fecha_inicio_nueva,fecha_hasta,agenda_anterior,agenda_generada,creado_en)
+      VALUES
+        (1,'2026-09-15','2026-09-08','2026-09-01',
+         '2026-09-08','2027-09-01','[]','[]','2026-08-20T12:00:00.000Z');
+    `);
+
+    assert.equal(await reajustarAgendaDosClasesPorMes(
+      db as unknown as Parameters<typeof reajustarAgendaDosClasesPorMes>[0],
+      "2026-09-20"
+    ), 1);
+    const filas = await db.getAllAsync<{ fecha: string; estado: string }>(
+      "SELECT fecha,estado FROM agenda_alumnos ORDER BY fecha"
+    );
+    assert.deepEqual(filas, [
+      { fecha: "2026-09-01", estado: "programada" },
+      { fecha: "2026-09-08", estado: "programada" },
+      { fecha: "2026-09-22", estado: "cancelada" },
+    ]);
+  });
 });

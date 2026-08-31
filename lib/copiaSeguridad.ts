@@ -9,7 +9,7 @@ type ValorSql = string | number | null;
 type FilaCopia = Record<string, ValorSql>;
 
 const FORMATO = "taller-de-ceramica";
-const VERSION_FORMATO = 3;
+const VERSION_FORMATO = 9;
 const ARCHIVO_EMERGENCIA = "taller-ceramica-antes-de-restaurar.json";
 const LIMITE_ARCHIVO = 100 * 1024 * 1024;
 
@@ -36,23 +36,37 @@ const tablas = [
       "pendientes", "fecha_inicio", "sin_grupo", "activo",
     ],
   },
+  {
+    nombre: "pagos_alumnos",
+    columnas: [
+      "alumno_id", "mes", "pagado", "clases_pagadas", "clases_extra", "clases_extra_usadas",
+      "fecha_pago", "actualizado_en",
+    ],
+  },
   { nombre: "clases", columnas: ["id", "alumno_id", "grupo_id", "fecha", "estado"] },
   {
     nombre: "agenda_alumnos",
     columnas: [
       "id", "alumno_id", "grupo_id", "fecha", "tipo", "estado", "modelo_id",
       "necesidades", "cubre_agenda_id", "origen_agenda_id", "feriado_origen",
-      "feriado_tipo_origen", "motivo_movimiento",
+      "feriado_tipo_origen", "motivo_movimiento", "pago_extra_mes", "extra_adeudada",
     ],
+  },
+  {
+    nombre: "agenda_modelos",
+    columnas: ["agenda_id", "modelo_id", "orden"],
   },
   {
     nombre: "movimientos_pendientes",
     columnas: [
-      "id", "alumno_id", "agenda_id", "delta", "tipo", "clave",
+      "id", "alumno_id", "agenda_id", "delta", "tipo", "categoria", "clave",
       "revierte_movimiento_id", "fecha", "creado_en",
     ],
   },
-  { nombre: "feriados", columnas: ["fecha", "motivo", "fecha_recuperacion", "tipo"] },
+  {
+    nombre: "feriados",
+    columnas: ["fecha", "grupo_id", "motivo", "fecha_recuperacion", "tipo"],
+  },
   {
     nombre: "reajustes_grupo",
     columnas: [
@@ -113,7 +127,8 @@ function validarCopia(valor: unknown): CopiaSeguridad {
     throw new Error("El archivo no pertenece a Taller de Cerámica.");
   }
   const versionRecibida = candidata.versionFormato;
-  if (versionRecibida !== 1 && versionRecibida !== 2 && versionRecibida !== VERSION_FORMATO) {
+  if (typeof versionRecibida !== "number" ||
+      ![1, 2, 3, 4, 5, 6, 7, 8, VERSION_FORMATO].includes(versionRecibida)) {
     throw new Error("La versión de esta copia todavía no es compatible.");
   }
   if (typeof candidata.creadaEn !== "string" || !candidata.tablas ||
@@ -135,6 +150,14 @@ function validarCopia(valor: unknown): CopiaSeguridad {
         tabla.nombre === "reajustes_grupo") {
       filas = [];
     }
+    if (!Array.isArray(filas) && versionRecibida < 5 &&
+        tabla.nombre === "agenda_modelos") {
+      filas = [];
+    }
+    if (!Array.isArray(filas) && versionRecibida < 6 &&
+        tabla.nombre === "pagos_alumnos") {
+      filas = [];
+    }
     if (!Array.isArray(filas)) throw new Error(`Falta la información de ${tabla.nombre}.`);
     filasTotales += filas.length;
     if (filasTotales > 100_000) throw new Error("La copia contiene demasiados registros.");
@@ -145,6 +168,31 @@ function validarCopia(valor: unknown): CopiaSeguridad {
       const registro = fila as Record<string, unknown>;
       const limpio: FilaCopia = {};
       for (const columna of tabla.columnas) {
+        if (versionRecibida < 7 && tabla.nombre === "agenda_alumnos" &&
+            columna === "pago_extra_mes" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = null;
+          continue;
+        }
+        if (versionRecibida < 8 && tabla.nombre === "agenda_alumnos" &&
+            columna === "extra_adeudada" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = 0;
+          continue;
+        }
+        if (versionRecibida < 9 && tabla.nombre === "movimientos_pendientes" &&
+            columna === "categoria" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = "regular";
+          continue;
+        }
+        if (versionRecibida < 7 && tabla.nombre === "pagos_alumnos" &&
+            columna === "clases_extra_usadas" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = 0;
+          continue;
+        }
+        if (versionRecibida < 4 && tabla.nombre === "feriados" &&
+            columna === "grupo_id" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = 0;
+          continue;
+        }
         if (!Object.prototype.hasOwnProperty.call(registro, columna) || !esValorSql(registro[columna])) {
           throw new Error(`La copia tiene un dato inválido en ${tabla.nombre}.${columna}.`);
         }
@@ -166,12 +214,37 @@ function validarCopia(valor: unknown): CopiaSeguridad {
           agenda_id: null,
           delta: pendientes,
           tipo: "saldo_inicial",
+          categoria: "regular",
           clave: `saldo_restaurado_v1:alumno:${alumnoId}:${indice}`,
           revierte_movimiento_id: null,
           fecha: creadaEn.slice(0, 10),
           creado_en: creadaEn,
         };
       });
+  }
+
+  if (versionRecibida < 9) {
+    const agendasExtraPagadas = new Set(
+      tablasLimpias.agenda_alumnos
+        .filter(agenda => agenda.pago_extra_mes && agenda.extra_adeudada !== 1)
+        .map(agenda => agenda.id)
+    );
+    for (const movimiento of tablasLimpias.movimientos_pendientes) {
+      if (movimiento.tipo === "ausencia" &&
+          agendasExtraPagadas.has(movimiento.agenda_id)) {
+        movimiento.categoria = "extra";
+      }
+    }
+    const movimientosPorId = new Map(
+      tablasLimpias.movimientos_pendientes.map(movimiento => [movimiento.id, movimiento])
+    );
+    for (const movimiento of tablasLimpias.movimientos_pendientes) {
+      if (movimiento.tipo !== "reversion" || movimiento.revierte_movimiento_id === null) {
+        continue;
+      }
+      movimiento.categoria =
+        movimientosPorId.get(movimiento.revierte_movimiento_id)?.categoria || "regular";
+    }
   }
 
   const saldos = new Map<number, number>();
@@ -342,6 +415,13 @@ async function aplicarCopia(copia: CopiaSeguridad, crearEmergencia: boolean) {
           );
         }
       }
+      await transaccion.execAsync(`
+        INSERT OR IGNORE INTO agenda_modelos (agenda_id,modelo_id,orden)
+        SELECT ag.id,ag.modelo_id,0
+        FROM agenda_alumnos ag
+        JOIN modelos m ON m.id = ag.modelo_id
+        WHERE ag.modelo_id IS NOT NULL;
+      `);
       const problemas = await transaccion.getAllAsync<{ table: string }>("PRAGMA foreign_key_check");
       if (problemas.length) {
         throw new Error("La copia tiene relaciones dañadas y no se puede utilizar.");

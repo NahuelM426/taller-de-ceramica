@@ -13,7 +13,7 @@ export function Screen({ title, subtitle, action, children }: {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <View style={styles.header}>
-        <Image source={require("../assets/mundo-ceramica-logo.png")} style={styles.logo} />
+        <Image source={require("../assets/menudo-ceramica-logo.png")} style={styles.logo} />
         <View style={styles.headerText}>
           <Text style={styles.eyebrow}>TALLER DE CERÁMICA</Text>
           <Text style={styles.title}>{title}</Text>

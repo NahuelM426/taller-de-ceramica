@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { Empty, Screen, ui } from "@/components/ui";
 import { AgregarPersonaModal } from "@/components/agenda/AgregarPersonaModal";
 import {
-  agendaDelMes, asignarRecuperacion, cambiarClaseParaCubrir,
+  agendaDelMes, asignarClaseExtraAdeudada,
+  asignarRecuperacion, cambiarClaseParaCubrir,
   registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
 import { fijarAlumnoEnGrupo, listarAlumnos } from "@/repositories/alumnoRepository";
@@ -20,7 +21,7 @@ import {
   armarClases, armarVacantes, calcularLugaresDisponibles, calcularVacantesLiberadas, fechaLocal,
   mensajeRecordatorio,
 } from "@/lib/vacantes";
-import { AgendaAlumno, Alumno, Grupo } from "@/models";
+import { AgendaAlumno, Alumno, Feriado, Grupo } from "@/models";
 
 const dias = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
@@ -28,7 +29,7 @@ export default function HoyScreen() {
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
   const [agendaProxima, setAgendaProxima] = useState<AgendaAlumno[]>([]);
-  const [feriados, setFeriados] = useState<string[]>([]);
+  const [feriados, setFeriados] = useState<Feriado[]>([]);
   const [loading, setLoading] = useState(false);
   const [detallesAbiertos, setDetallesAbiertos] = useState<Record<string, boolean>>({});
   const [guardandoAsistencia, setGuardandoAsistencia] = useState<number | null>(null);
@@ -41,16 +42,17 @@ export default function HoyScreen() {
     setLoading(true);
     const fin = new Date();
     fin.setDate(fin.getDate() + 60);
-    const inicioTexto = fechaLocal();
+    const hoyTexto = fechaLocal();
+    const inicioTexto = `${hoyTexto.slice(0, 7)}-01`;
     const finTexto = fechaLocal(fin);
     const [g, a, agenda, feriadosCargados, estadoCopia] = await Promise.all([
       listarGrupos(), listarAlumnos(), agendaDelMes(inicioTexto, finTexto),
-      listarFeriados(inicioTexto, finTexto), estadoCopiaSeguridad(),
+      listarFeriados(hoyTexto, finTexto), estadoCopiaSeguridad(),
     ]);
     setGrupos(g);
     setAlumnos(a);
     setAgendaProxima(agenda);
-    setFeriados(feriadosCargados.map(item => item.fecha));
+    setFeriados(feriadosCargados);
     setCopiaPendiente(estadoCopia.copiaPendiente);
     setDiasDesdeCopia(estadoCopia.diasDesdeUltima);
     setLoading(false);
@@ -83,6 +85,14 @@ export default function HoyScreen() {
         await asignarRecuperacion(
           alumnoId, grupoParaAgregar.grupo.id, grupoParaAgregar.fecha
         );
+      } else if (tipo === "recuperacion_extra") {
+        await asignarRecuperacion(
+          alumnoId, grupoParaAgregar.grupo.id, grupoParaAgregar.fecha, "extra"
+        );
+      } else if (tipo === "extra_debe") {
+        await asignarClaseExtraAdeudada(
+          alumnoId, grupoParaAgregar.grupo.id, grupoParaAgregar.fecha
+        );
       } else if (tipo === "fijar") {
         await fijarAlumnoEnGrupo(
           alumnoId, grupoParaAgregar.grupo.id, grupoParaAgregar.fecha
@@ -105,6 +115,11 @@ export default function HoyScreen() {
       );
       return false;
     }
+  };
+
+  const abrirSelectorAlumno = async (grupo: Grupo, fecha: string) => {
+    setGrupoParaAgregar({ grupo, fecha });
+    setSelectorAlumnoVisible(true);
   };
 
   const cambiarAsistencia = async (item: AgendaAlumno, viene: boolean) => {
@@ -202,10 +217,13 @@ export default function HoyScreen() {
           const claseMovida = agendaClase.find(item => item.feriado_origen);
           const abierto = !!detallesAbiertos[clase.key];
           const cantidadesModelos = agendaClase
-            .filter(item => item.estado !== "ausente" && item.modelo_nombre)
+            .filter(item => item.estado !== "ausente")
             .reduce<Record<string, number>>((conteo, item) => {
-              const modelo = item.modelo_nombre || "Sin modelo";
-              conteo[modelo] = (conteo[modelo] || 0) + 1;
+              const nombres = item.modelo_nombres ||
+                (item.modelo_nombre ? [item.modelo_nombre] : []);
+              for (const modelo of nombres) {
+                conteo[modelo] = (conteo[modelo] || 0) + 1;
+              }
               return conteo;
             }, {});
 
@@ -295,6 +313,9 @@ export default function HoyScreen() {
                   const esDeOtroGrupo = sinGrupoHabitual || itemAgenda.alumno_grupo_id !== grupo.id;
                   const colorAlumno = alumno.grupo_color || colors.muted;
                   const noNecesitaModelo = itemAgenda.necesidades === "No necesita";
+                  const nombresModelos = itemAgenda.modelo_nombres ||
+                    (itemAgenda.modelo_nombre ? [itemAgenda.modelo_nombre] : []);
+                  const tieneModelos = nombresModelos.length > 0;
                   const origenAlumno = sinGrupoHabitual
                     ? "sin grupo habitual"
                     : itemAgenda.alumno_grupo_nombre || "otro grupo";
@@ -323,6 +344,10 @@ export default function HoyScreen() {
                               itemAgenda.motivo_movimiento,
                               itemAgenda.feriado_origen
                             )
+                          : itemAgenda.extra_adeudada
+                          ? "Clase extra a cobrar"
+                          : itemAgenda.pago_extra_mes
+                          ? "Clase extra pagada"
                           : itemAgenda.tipo === "recuperacion"
                           ? `Recupera una clase pendiente${esDeOtroGrupo ? ` · viene de ${origenAlumno}` : ""}`
                           : itemAgenda.tipo === "manual" && esDeOtroGrupo
@@ -340,10 +365,10 @@ export default function HoyScreen() {
                         } as never)}
                         style={styles.modelLink}
                       >
-                        <Text style={[styles.modelName, !itemAgenda.modelo_id && !noNecesitaModelo && { color: colors.warning }]}>
-                          {noNecesitaModelo ? "No necesita modelo" : itemAgenda.modelo_nombre || "Falta elegir modelo"}
+                        <Text style={[styles.modelName, !tieneModelos && !noNecesitaModelo && { color: colors.warning }]}>
+                          {noNecesitaModelo ? "No necesita modelo" : nombresModelos.join(", ") || "Falta elegir modelo"}
                         </Text>
-                        <Ionicons name="create-outline" size={14} color={itemAgenda.modelo_id || noNecesitaModelo ? colors.primary : colors.warning} />
+                        <Ionicons name="create-outline" size={14} color={tieneModelos || noNecesitaModelo ? colors.primary : colors.warning} />
                       </Pressable>
                       <Text style={styles.attendanceQuestion}>¿Viene a esta clase?</Text>
                       <View style={styles.attendanceChoices}>
@@ -394,10 +419,7 @@ export default function HoyScreen() {
                   <Ionicons name="chevron-forward" size={17} color={colors.clay} />
                 </Pressable>
                 <Pressable
-                  onPress={() => {
-                    setGrupoParaAgregar({ grupo, fecha: fechaGrupo });
-                    setSelectorAlumnoVisible(true);
-                  }}
+                  onPress={() => abrirSelectorAlumno(grupo, fechaGrupo)}
                   style={styles.addPersonButton}
                 >
                   <Ionicons name="person-add-outline" size={17} color={colors.primary} />

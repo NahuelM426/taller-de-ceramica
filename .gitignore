@@ -6,6 +6,7 @@ expo-env.d.ts
 # @end expo-cli
 
 node_modules/
+/android/
 .expo/
 .expo-export-*/
 .eas-build-staging*/
@@ -20,3 +21,5 @@ node_modules/
 *.jks
 *.p12
 *.pem
+credentials.json
+credentials*.json

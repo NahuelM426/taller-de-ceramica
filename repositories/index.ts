@@ -6,5 +6,6 @@ export * from "./grupoRepository";
 export * from "./modeloRepository";
 export * from "./moldeRepository";
 export * from "./notificacionRepository";
+export * from "./pagoRepository";
 export * from "./preferenciaRepository";
 export * from "./reajusteRepository";

@@ -4,12 +4,29 @@ import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Contacts from "expo-contacts";
 import { AddButton, Choice, Empty, Field, FormModal, Screen, ui } from "@/components/ui";
+import { PagoAlumnoModal } from "@/components/alumnos/PagoAlumnoModal";
 import { PendientesAlumnoModal } from "@/components/alumnos/PendientesAlumnoModal";
+import { RecordatorioPagosModal } from "@/components/alumnos/RecordatorioPagosModal";
 import { actualizarPendientesAlumno, crearAlumno, editarAlumno, eliminarAlumno, listarAlumnos } from "@/repositories/alumnoRepository";
 import { listarGrupos } from "@/repositories/grupoRepository";
+import { cobrarExtrasAlumno, guardarPagoAlumno, listarPagosMes } from "@/repositories/pagoRepository";
+import { mesPagoActual, mesPagoSiguiente, nombreMesPago } from "@/lib/pagos";
+import {
+  alumnoPasaFiltro, FiltroListadoAlumnos, SubfiltroNoPagaron,
+  SubfiltroPendientes,
+} from "@/lib/filtrosAlumnos";
+import {
+  pendientesExtraAlumno,
+  pendientesRegularesAlumno,
+} from "@/lib/seleccionAgenda";
 import { colors } from "@/lib/theme";
-import { reprogramarNotificaciones } from "@/lib/notifications";
-import { Alumno, Grupo } from "@/models";
+import {
+  ConfiguracionRecordatorioPagos,
+  configurarRecordatorioPagos,
+  obtenerConfiguracionRecordatorioPagos,
+  reprogramarNotificaciones,
+} from "@/lib/notifications";
+import { Alumno, CantidadClasesPagadas, EstadoPagoAlumno, Grupo } from "@/models";
 
 const fechaHoy = () => {
   const hoy = new Date();
@@ -17,7 +34,11 @@ const fechaHoy = () => {
 };
 
 export default function AlumnosScreen() {
+  const mesActual = mesPagoActual();
+  const mesSiguiente = mesPagoSiguiente(mesActual);
+  const [mesPagoSeleccionado, setMesPagoSeleccionado] = useState(mesActual);
   const [alumnos, setAlumnos] = useState<Alumno[]>([]);
+  const [pagos, setPagos] = useState<EstadoPagoAlumno[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [modal, setModal] = useState(false);
   const [editando, setEditando] = useState<Alumno | null>(null);
@@ -27,15 +48,31 @@ export default function AlumnosScreen() {
   const [fechaInicio, setFechaInicio] = useState(fechaHoy());
   const [abriendoContactos, setAbriendoContactos] = useState(false);
   const [busqueda, setBusqueda] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | "pendientes">("todos");
+  const [filtro, setFiltro] = useState<FiltroListadoAlumnos>("todos");
+  const [subfiltroPendientes, setSubfiltroPendientes] =
+    useState<SubfiltroPendientes>("todos");
+  const [subfiltroNoPagaron, setSubfiltroNoPagaron] =
+    useState<SubfiltroNoPagaron>("todos");
   const [alumnoPendientes, setAlumnoPendientes] = useState<Alumno | null>(null);
+  const [alumnoPago, setAlumnoPago] = useState<Alumno | null>(null);
+  const [recordatorioVisible, setRecordatorioVisible] = useState(false);
+  const [recordatorioPagos, setRecordatorioPagos] = useState<ConfiguracionRecordatorioPagos>({
+    activo: false,
+    dia: 10,
+    hora: "10:00",
+  });
 
   const cargar = useCallback(async () => {
-    const [personas, gruposCargados] = await Promise.all([listarAlumnos(), listarGrupos()]);
+    const [personas, gruposCargados, pagosCargados, configuracionPagos] = await Promise.all([
+      listarAlumnos(), listarGrupos(), listarPagosMes(mesPagoSeleccionado),
+      obtenerConfiguracionRecordatorioPagos(),
+    ]);
     setAlumnos(personas);
     setGrupos(gruposCargados);
+    setPagos(pagosCargados);
+    setRecordatorioPagos(configuracionPagos);
     setGrupoId(actual => actual || gruposCargados[0]?.id || null);
-  }, []);
+  }, [mesPagoSeleccionado]);
   useFocusEffect(useCallback(() => { cargar(); }, [cargar]));
 
   const abrirNuevo = () => {
@@ -145,11 +182,85 @@ export default function AlumnosScreen() {
     await cargar();
   };
 
+  const guardarPago = async (
+    pagado: boolean,
+    clasesPagadas: CantidadClasesPagadas,
+    cobrarExtras: boolean
+  ) => {
+    if (!alumnoPago) return;
+    try {
+      await guardarPagoAlumno(
+        alumnoPago.id,
+        mesPagoSeleccionado,
+        pagado,
+        clasesPagadas,
+        pagos.find(pago => pago.alumno_id === alumnoPago.id)?.clases_extra || 0,
+        cobrarExtras
+      );
+      await reprogramarNotificaciones(false);
+      setAlumnoPago(null);
+      await cargar();
+    } catch (error) {
+      Alert.alert(
+        "No se pudo guardar el pago",
+        error instanceof Error ? error.message : "Revisá los datos e intentá nuevamente."
+      );
+    }
+  };
+
+  const cobrarSoloExtras = async () => {
+    if (!alumnoPago) return;
+    try {
+      const cobradas = await cobrarExtrasAlumno(alumnoPago.id, mesPagoSeleccionado);
+      if (!cobradas) {
+        Alert.alert("Sin extras pendientes", "No hay clases extra para cobrar en este período.");
+        return;
+      }
+      await reprogramarNotificaciones(false);
+      setAlumnoPago(null);
+      await cargar();
+    } catch (error) {
+      Alert.alert(
+        "No se pudieron cobrar las extras",
+        error instanceof Error ? error.message : "Revisá los datos e intentá nuevamente."
+      );
+    }
+  };
+
+  const guardarRecordatorioPagos = async (configuracion: ConfiguracionRecordatorioPagos) => {
+    const guardado = await configurarRecordatorioPagos(configuracion);
+    const configuracionActual = await obtenerConfiguracionRecordatorioPagos();
+    setRecordatorioPagos(configuracionActual);
+    if (!guardado && configuracion.activo) {
+      Alert.alert(
+        "No se pudo activar",
+        "Permití las notificaciones desde la configuración del teléfono y volvé a intentarlo."
+      );
+      return;
+    }
+    setRecordatorioVisible(false);
+  };
+
+  const pagosPorAlumno = new Map(pagos.map(pago => [pago.alumno_id, pago]));
+  const noPagaron = pagos.filter(pago => pago.pagado !== 1).length;
+  const debenExtras = pagos.filter(pago => pago.clases_extra_adeudadas > 0).length;
+  const deudasPago = pagos.filter(
+    pago => pago.pagado !== 1 || pago.clases_extra_adeudadas > 0
+  ).length;
+  const nombreMes = nombreMesPago(mesPagoSeleccionado);
+
   const termino = busqueda.trim().toLocaleLowerCase("es");
   const alumnosVisibles = alumnos.filter(alumno => {
     const coincide = !termino || alumno.nombre.toLocaleLowerCase("es").includes(termino) ||
       (alumno.telefono || "").toLocaleLowerCase("es").includes(termino);
-    const pasaFiltro = filtro === "todos" || alumno.pendientes > 0;
+    const pago = pagosPorAlumno.get(alumno.id);
+    const pasaFiltro = alumnoPasaFiltro(
+      alumno,
+      pago,
+      filtro,
+      subfiltroPendientes,
+      subfiltroNoPagaron
+    );
     return coincide && pasaFiltro;
   });
 
@@ -173,6 +284,80 @@ export default function AlumnosScreen() {
       <ScrollView contentContainerStyle={ui.list}>
         {!alumnos.length && <Empty text="Cargá la primera persona del taller." />}
         {!!alumnos.length && <>
+          <View style={styles.monthSelector}>
+            <Pressable
+              onPress={() => setMesPagoSeleccionado(mesActual)}
+              style={[styles.monthOption, mesPagoSeleccionado === mesActual && styles.monthOptionOn]}
+            >
+              <Text style={[styles.monthHint, mesPagoSeleccionado === mesActual && styles.monthTextOn]}>ESTE MES</Text>
+              <Text style={[styles.monthName, mesPagoSeleccionado === mesActual && styles.monthTextOn]}>
+                {nombreMesPago(mesActual)}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setMesPagoSeleccionado(mesSiguiente)}
+              style={[styles.monthOption, mesPagoSeleccionado === mesSiguiente && styles.monthOptionOn]}
+            >
+              <Text style={[styles.monthHint, mesPagoSeleccionado === mesSiguiente && styles.monthTextOn]}>MES SIGUIENTE</Text>
+              <Text style={[styles.monthName, mesPagoSeleccionado === mesSiguiente && styles.monthTextOn]}>
+                {nombreMesPago(mesSiguiente)}
+              </Text>
+            </Pressable>
+          </View>
+          {!!noPagaron && (
+            <Pressable
+              onPress={() => {
+                setFiltro("no_pagaron");
+                setSubfiltroNoPagaron("cuota");
+              }}
+              style={styles.paymentNotice}
+            >
+              <View style={styles.paymentNoticeIcon}>
+                <Ionicons name="notifications" size={20} color={colors.danger} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.paymentNoticeTitle}>Faltan pagos de {nombreMes}</Text>
+                <Text style={styles.paymentNoticeText}>
+                  {noPagaron} {noPagaron === 1 ? "alumno todavía no pagó" : "alumnos todavía no pagaron"}. Tocá para verlos.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.danger} />
+            </Pressable>
+          )}
+          <View style={styles.paymentSummaryRow}>
+            <Pressable onPress={() => setRecordatorioVisible(true)} style={styles.reminderButton}>
+              <View style={styles.reminderIcon}>
+                <Ionicons
+                  name={recordatorioPagos.activo ? "alarm" : "alarm-outline"}
+                  size={20}
+                  color={colors.primary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.reminderTitle}>Recordatorio de pagos</Text>
+                <Text style={styles.reminderText}>
+                  {recordatorioPagos.activo
+                    ? `Día ${recordatorioPagos.dia} de cada mes a las ${recordatorioPagos.hora}`
+                    : "Desactivado · tocá para configurar"}
+                </Text>
+              </View>
+              <Ionicons name="settings-outline" size={18} color={colors.primary} />
+            </Pressable>
+            {!!debenExtras && (
+              <Pressable
+                onPress={() => {
+                  setFiltro("no_pagaron");
+                  setSubfiltroNoPagaron("extras");
+                }}
+                style={styles.extrasDebtNotice}
+              >
+                <Ionicons name="cash-outline" size={19} color={colors.danger} />
+                <Text style={styles.extrasDebtNoticeText}>
+                  {debenExtras} con extra{debenExtras === 1 ? "" : "s"} a cobrar
+                </Text>
+              </Pressable>
+            )}
+          </View>
           <View style={styles.searchBox}>
             <Ionicons name="search-outline" size={19} color={colors.muted} />
             <TextInput
@@ -192,28 +377,107 @@ export default function AlumnosScreen() {
             <Pressable onPress={() => setFiltro("todos")} style={[styles.filter, filtro === "todos" && styles.filterOn]}>
               <Text style={[styles.filterText, filtro === "todos" && styles.filterTextOn]}>Todos</Text>
             </Pressable>
-            <Pressable onPress={() => setFiltro("pendientes")} style={[styles.filter, filtro === "pendientes" && styles.filterOn]}>
+            <Pressable
+              onPress={() => {
+                setFiltro("pendientes");
+                setSubfiltroPendientes("todos");
+              }}
+              style={[styles.filter, filtro === "pendientes" && styles.filterOn]}
+            >
               <Text style={[styles.filterText, filtro === "pendientes" && styles.filterTextOn]}>Con pendientes</Text>
             </Pressable>
+            <Pressable
+              onPress={() => {
+                setFiltro("no_pagaron");
+                setSubfiltroNoPagaron("todos");
+              }}
+              style={[styles.filter, filtro === "no_pagaron" && styles.filterUnpaidOn]}
+            >
+              <Text style={[styles.filterText, filtro === "no_pagaron" && styles.filterUnpaidText]}>
+                No pagaron {deudasPago ? `(${deudasPago})` : ""}
+              </Text>
+            </Pressable>
           </View>
+          {filtro === "pendientes" && (
+            <View style={styles.subfilters}>
+              <Text style={styles.subfilterLabel}>MOSTRAR</Text>
+              <SubfilterButton
+                label="Todos"
+                selected={subfiltroPendientes === "todos"}
+                onPress={() => setSubfiltroPendientes("todos")}
+              />
+              <SubfilterButton
+                label="Clases"
+                selected={subfiltroPendientes === "regulares"}
+                onPress={() => setSubfiltroPendientes("regulares")}
+              />
+              <SubfilterButton
+                label="Extras a favor"
+                selected={subfiltroPendientes === "extras"}
+                onPress={() => setSubfiltroPendientes("extras")}
+              />
+            </View>
+          )}
+          {filtro === "no_pagaron" && (
+            <View style={styles.subfilters}>
+              <Text style={styles.subfilterLabel}>MOSTRAR</Text>
+              <SubfilterButton
+                label="Todos"
+                selected={subfiltroNoPagaron === "todos"}
+                danger
+                onPress={() => setSubfiltroNoPagaron("todos")}
+              />
+              <SubfilterButton
+                label="Cuota"
+                selected={subfiltroNoPagaron === "cuota"}
+                danger
+                onPress={() => setSubfiltroNoPagaron("cuota")}
+              />
+              <SubfilterButton
+                label="Extras a cobrar"
+                selected={subfiltroNoPagaron === "extras"}
+                danger
+                onPress={() => setSubfiltroNoPagaron("extras")}
+              />
+            </View>
+          )}
         </>}
         {!!alumnos.length && !alumnosVisibles.length && (
           <Empty title="Sin resultados" text="No encontramos alumnos con esa búsqueda o filtro." />
         )}
         {alumnosVisibles.map(alumno => {
           const colorGrupo = alumno.sin_grupo ? colors.muted : alumno.grupo_color || colors.primary;
+          const pago = pagosPorAlumno.get(alumno.id);
+          const estaPagado = pago?.pagado === 1;
+          const extrasAdeudadas = pago?.clases_extra_adeudadas || 0;
+          const pendientesRegulares = pendientesRegularesAlumno(alumno);
+          const pendientesExtra = pendientesExtraAlumno(alumno);
           return (
           <Pressable
             key={alumno.id}
             onPress={() => abrirEdicion(alumno)}
             style={[ui.card, styles.studentCard, { borderLeftColor: colorGrupo }]}
           >
-            <View style={ui.row}>
+            <View style={styles.studentHeader}>
               <View style={[styles.avatar, { backgroundColor: `${colorGrupo}20` }]}>
                 <Text style={[styles.avatarText, { color: colorGrupo }]}>{alumno.nombre.split(" ").map(p => p[0]).slice(0, 2).join("")}</Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={ui.name}>{alumno.nombre}</Text>
+              <View style={styles.studentIdentity}>
+                <View style={styles.nameLine}>
+                  <Text style={[ui.name, styles.studentName]}>{alumno.nombre}</Text>
+                  {!pendientesRegulares && (
+                    <Pressable
+                      onPress={event => {
+                        event.stopPropagation();
+                        setAlumnoPendientes(alumno);
+                      }}
+                      style={styles.loadPendingButton}
+                    >
+                      <Ionicons name="add-circle-outline" size={13} color={colors.primary} />
+                      <Text style={styles.loadPendingText}>Cargar pendientes</Text>
+                    </Pressable>
+                  )}
+                </View>
                 <View style={styles.groupLine}>
                   <View style={[styles.groupDot, { backgroundColor: colorGrupo }]} />
                   <Text style={[styles.groupName, { color: colorGrupo }]}>
@@ -223,26 +487,79 @@ export default function AlumnosScreen() {
                     <Text style={styles.frequency}>· {alumno.frecuencia === "semanal" ? "Semanal" : "2 veces por mes"}</Text>
                   )}
                 </View>
-              </View>
-              <View style={styles.cardActions}>
-                <Pressable
-                  onPress={event => {
-                    event.stopPropagation();
-                    setAlumnoPendientes(alumno);
-                  }}
-                  style={[styles.pendingButton, { backgroundColor: alumno.pendientes ? colors.claySoft : colors.primarySoft }]}
-                >
-                  <Ionicons name={alumno.pendientes ? "time-outline" : "add-circle-outline"} size={14} color={alumno.pendientes ? colors.clay : colors.primary} />
-                  <Text style={[styles.pendingButtonText, { color: alumno.pendientes ? colors.clay : colors.primary }]}>
-                    {alumno.pendientes
-                      ? `${alumno.pendientes} pendiente${alumno.pendientes === 1 ? "" : "s"}`
-                      : "Cargar pendientes"}
-                  </Text>
-                </Pressable>
-                <View style={styles.editIcon}>
-                  <Ionicons name="pencil-outline" size={17} color={colors.primary} />
+                <View style={styles.creditSummary}>
+                  {!!pendientesRegulares && (
+                    <Pressable
+                      onPress={event => {
+                        event.stopPropagation();
+                        setAlumnoPendientes(alumno);
+                      }}
+                      style={[styles.pendingButton, { backgroundColor: colors.claySoft }]}
+                    >
+                      <Ionicons name="time-outline" size={14} color={colors.clay} />
+                      <Text style={[styles.pendingButtonText, { color: colors.clay }]}>
+                        {pendientesRegulares} pendiente{pendientesRegulares === 1 ? "" : "s"}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {!!pendientesExtra && (
+                    <View style={styles.extraCreditButton}>
+                      <Ionicons name="ticket-outline" size={14} color={colors.primary} />
+                      <Text style={styles.extraCreditButtonText}>
+                        {pendientesExtra} extra{pendientesExtra === 1 ? "" : "s"} a favor
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
+              <Pressable
+                accessibilityLabel={`Editar a ${alumno.nombre}`}
+                onPress={event => {
+                  event.stopPropagation();
+                  abrirEdicion(alumno);
+                }}
+                style={styles.editIcon}
+              >
+                <Ionicons name="pencil-outline" size={17} color={colors.primary} />
+              </Pressable>
+            </View>
+            <View style={styles.bottomActions}>
+              {!!extrasAdeudadas && (
+                  <Pressable
+                    onPress={event => {
+                      event.stopPropagation();
+                      setAlumnoPago(alumno);
+                    }}
+                    style={styles.extraDebtButton}
+                  >
+                    <Ionicons name="cash-outline" size={14} color={colors.danger} />
+                    <Text style={styles.extraDebtButtonText}>
+                      {extrasAdeudadas} extra{extrasAdeudadas === 1 ? "" : "s"} a cobrar
+                    </Text>
+                  </Pressable>
+              )}
+              <Pressable
+                onPress={event => {
+                  event.stopPropagation();
+                  setAlumnoPago(alumno);
+                }}
+                style={[
+                  styles.paymentButton,
+                  estaPagado ? styles.paymentButtonPaid : styles.paymentButtonUnpaid,
+                ]}
+              >
+                <Ionicons
+                  name={estaPagado ? "checkmark-circle" : "alert-circle"}
+                  size={14}
+                  color={estaPagado ? colors.success : colors.danger}
+                />
+                <Text style={[
+                  styles.paymentButtonText,
+                  { color: estaPagado ? colors.success : colors.danger },
+                ]}>
+                  {estaPagado ? `Pagó · ${pago.clases_pagadas} clases` : "No pagó"}
+                </Text>
+              </Pressable>
             </View>
             <View style={styles.details}>
               <Ionicons name={alumno.telefono ? "call-outline" : "alert-circle-outline"} size={15} color={alumno.telefono ? colors.muted : colors.warning} />
@@ -309,7 +626,45 @@ export default function AlumnosScreen() {
         onClose={() => setAlumnoPendientes(null)}
         onConfirm={guardarPendientes}
       />
+      <PagoAlumnoModal
+        alumno={alumnoPago}
+        pago={alumnoPago ? pagosPorAlumno.get(alumnoPago.id) || null : null}
+        mes={mesPagoSeleccionado}
+        onClose={() => setAlumnoPago(null)}
+        onConfirm={guardarPago}
+        onPayExtrasOnly={cobrarSoloExtras}
+      />
+      <RecordatorioPagosModal
+        visible={recordatorioVisible}
+        configuracion={recordatorioPagos}
+        onClose={() => setRecordatorioVisible(false)}
+        onConfirm={guardarRecordatorioPagos}
+      />
     </Screen>
+  );
+}
+
+function SubfilterButton({ label, selected, danger = false, onPress }: {
+  label: string;
+  selected: boolean;
+  danger?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[
+        styles.subfilter,
+        selected && (danger ? styles.subfilterDangerOn : styles.subfilterOn),
+      ]}
+    >
+      <Text style={[
+        styles.subfilterText,
+        selected && (danger ? styles.subfilterDangerText : styles.subfilterTextOn),
+      ]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -317,6 +672,10 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: "row", alignItems: "center", gap: 7 },
   backupButton: { width: 44, height: 44, borderRadius: 15, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   studentCard: { borderLeftWidth: 5 },
+  studentHeader: { flexDirection: "row", alignItems: "flex-start" },
+  studentIdentity: { flex: 1, minWidth: 0 },
+  nameLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 7 },
+  studentName: { flexShrink: 1 },
   avatar: { width: 45, height: 45, borderRadius: 23, marginRight: 11, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   avatarText: { color: colors.primary, fontWeight: "900", fontSize: 13 },
   groupLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 4, marginTop: 4 },
@@ -333,15 +692,53 @@ const styles = StyleSheet.create({
   contactText: { color: colors.muted, fontSize: 10, marginTop: 3 },
   searchBox: { minHeight: 48, paddingHorizontal: 13, borderRadius: 13, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, flexDirection: "row", alignItems: "center", gap: 9 },
   searchInput: { flex: 1, color: colors.ink, fontSize: 14 },
-  filters: { flexDirection: "row", gap: 8 },
+  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   filter: { minHeight: 39, paddingHorizontal: 14, borderRadius: 99, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
   filterOn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   filterText: { color: colors.muted, fontSize: 12, fontWeight: "800" },
   filterTextOn: { color: colors.primary },
-  cardActions: { alignItems: "flex-end", gap: 10, marginLeft: 8 },
+  filterUnpaidOn: { borderColor: colors.danger, backgroundColor: "#FFF0EF" },
+  filterUnpaidText: { color: colors.danger },
+  subfilters: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 7, marginTop: -2 },
+  subfilterLabel: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: .6, marginRight: 2 },
+  subfilter: { minHeight: 32, paddingHorizontal: 11, borderRadius: 99, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
+  subfilterOn: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
+  subfilterDangerOn: { borderColor: colors.danger, backgroundColor: "#FFF0EF" },
+  subfilterText: { color: colors.muted, fontSize: 10, fontWeight: "800" },
+  subfilterTextOn: { color: colors.primary },
+  subfilterDangerText: { color: colors.danger },
+  creditSummary: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 9 },
+  loadPendingButton: { minHeight: 28, paddingHorizontal: 8, borderRadius: 99, backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 4 },
+  loadPendingText: { color: colors.primary, fontSize: 9, fontWeight: "900" },
+  bottomActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center", gap: 7, marginTop: 12 },
+  paymentNotice: { padding: 13, borderRadius: 15, borderWidth: 1, borderColor: "#E9ABA5", backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", gap: 10 },
+  paymentNoticeIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
+  paymentNoticeTitle: { color: colors.danger, fontSize: 13, fontWeight: "900", textTransform: "capitalize" },
+  paymentNoticeText: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 2 },
+  monthSelector: { flexDirection: "row", gap: 8 },
+  monthOption: { flex: 1, minHeight: 58, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, alignItems: "center", justifyContent: "center" },
+  monthOptionOn: { borderColor: colors.primary, backgroundColor: colors.primary },
+  monthHint: { color: colors.muted, fontSize: 9, fontWeight: "900", letterSpacing: .5 },
+  monthName: { color: colors.ink, fontSize: 12, fontWeight: "900", textTransform: "capitalize", marginTop: 3 },
+  monthTextOn: { color: "white" },
+  paymentSummaryRow: { gap: 8 },
+  reminderButton: { minHeight: 66, padding: 12, borderRadius: 15, borderWidth: 1, borderColor: "#BCD2CA", backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 10 },
+  reminderIcon: { width: 39, height: 39, borderRadius: 13, backgroundColor: "white", alignItems: "center", justifyContent: "center" },
+  reminderTitle: { color: colors.primary, fontSize: 13, fontWeight: "900" },
+  reminderText: { color: colors.muted, fontSize: 11, lineHeight: 16, marginTop: 2 },
+  extrasDebtNotice: { minHeight: 46, paddingHorizontal: 13, borderRadius: 14, borderWidth: 1, borderColor: "#E9ABA5", backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", gap: 8 },
+  extrasDebtNoticeText: { color: colors.danger, fontSize: 12, fontWeight: "900" },
+  paymentButton: { minHeight: 31, paddingHorizontal: 9, borderRadius: 99, flexDirection: "row", alignItems: "center", gap: 4 },
+  paymentButtonPaid: { backgroundColor: "#EAF5F0" },
+  paymentButtonUnpaid: { backgroundColor: "#FFF0EF" },
+  paymentButtonText: { fontSize: 10, fontWeight: "900" },
+  extraDebtButton: { minHeight: 31, paddingHorizontal: 9, borderRadius: 99, backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", gap: 4 },
+  extraDebtButtonText: { color: colors.danger, fontSize: 10, fontWeight: "900" },
+  extraCreditButton: { minHeight: 31, paddingHorizontal: 9, borderRadius: 99, backgroundColor: colors.primarySoft, flexDirection: "row", alignItems: "center", gap: 4 },
+  extraCreditButtonText: { color: colors.primary, fontSize: 10, fontWeight: "900" },
   pendingButton: { minHeight: 31, paddingHorizontal: 9, borderRadius: 99, flexDirection: "row", alignItems: "center", gap: 4 },
   pendingButtonText: { fontSize: 10, fontWeight: "900" },
-  editIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
+  editIcon: { width: 38, height: 38, marginLeft: 8, borderRadius: 12, backgroundColor: colors.primarySoft, alignItems: "center", justifyContent: "center" },
   deleteButton: { minHeight: 48, borderRadius: 12, borderWidth: 1, borderColor: "#F0C1BD", backgroundColor: "#FFF0EF", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 10 },
   deleteText: { color: colors.danger, fontSize: 14, fontWeight: "900" },
 });

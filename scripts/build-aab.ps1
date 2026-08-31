@@ -13,7 +13,7 @@ if (Test-Path -LiteralPath $taskStage) {
 New-Item -ItemType Directory -Path $taskStage | Out-Null
 
 $taskExcludedNames = @(
-  "node_modules", ".expo", ".git", "docs", "play-store",
+  "node_modules", "android", ".expo", ".git", "docs", "play-store",
   ".eas-build-staging", ".eas-build-staging-current"
 )
 
