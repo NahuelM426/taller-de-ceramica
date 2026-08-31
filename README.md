@@ -1,77 +1,87 @@
 # Taller de Cerámica
 
-Aplicación móvil para un taller de cerámica, creada con React Native, Expo 54,
-Expo Router, TypeScript y SQLite.
+Aplicación móvil de gestión para talleres de cerámica, desarrollada para organizar alumnos, grupos, clases, recuperaciones y la preparación de modelos y materiales desde un único lugar.
 
-## Ejecutar
+![Demo de Taller de Cerámica](./demo.png)
+
+## Sobre el proyecto
+
+El objetivo de la aplicación es reemplazar anotaciones y controles dispersos por una herramienta móvil simple para la operación cotidiana de un taller.
+
+Permite administrar grupos recurrentes, controlar asistencia, gestionar ausencias y recuperaciones, reorganizar clases por feriados o compromisos y anticipar qué modelos y materiales deben prepararse para cada encuentro.
+
+## Funcionalidades principales
+
+- Gestión de alumnos con frecuencia semanal o dos clases por mes.
+- Creación y edición de grupos por día, horario y capacidad.
+- Agenda individual generada automáticamente desde una fecha inicial.
+- Vista mensual de clases y grupos.
+- Registro de ausencias con generación automática de clases pendientes.
+- Asignación de recuperaciones en otros grupos.
+- Reprogramación de una clase individual por feriado o compromiso.
+- Gestión de feriados y días cerrados con traslado de grupos completos.
+- Reajuste del patrón futuro para grupos de dos clases por mes con historial y restauración segura.
+- Catálogo editable de modelos de cerámica.
+- Elección del modelo que realizará cada alumno en una fecha concreta.
+- Resumen automático de modelos y materiales necesarios para preparar cada clase.
+- Recordatorios locales configurables por días y horas de anticipación.
+- Accesos rápidos a alumnos, próximas vacantes y clases pendientes.
+- Persistencia local de datos con SQLite.
+
+## Tecnologías
+
+- React Native
+- Expo SDK 54
+- Expo Router
+- TypeScript
+- SQLite
+- Expo EAS para compilaciones Android
+
+## Arquitectura
+
+El proyecto separa responsabilidades para mantener la lógica de negocio y el acceso a datos fuera de las pantallas:
+
+- `models/`: entidades del dominio como alumnos, grupos, clases, modelos y feriados.
+- `repositories/`: operaciones de lectura y escritura por entidad.
+- `database/`: conexión SQLite, esquema, migraciones y mantenimiento de agendas recurrentes.
+- `lib/`: reglas de presentación, vacantes y notificaciones.
+- `app/`: pantallas y navegación de la aplicación.
+
+`lib/db.ts` se mantiene únicamente como fachada de compatibilidad; el código nuevo utiliza repositorios específicos.
+
+## Decisiones de diseño
+
+- Funcionamiento local para reducir dependencias externas.
+- Persistencia SQLite dentro del dispositivo.
+- Separación entre interfaz, reglas de negocio y acceso a datos.
+- Gestión segura de cambios en agendas recurrentes mediante historial y restauración.
+- Notificaciones orientadas a la operación real del taller, mostrando asistentes y preparación necesaria.
+
+## Ejecutar el proyecto
 
 ```powershell
 npm install
 npx expo start
 ```
 
-Después escaneá el QR con Expo Go o presioná `a` para abrir Android.
+Luego se puede escanear el QR con Expo Go o presionar `a` para abrir Android.
 
 ## Compilaciones Android
 
-Para generar un APK instalable directamente:
+APK instalable:
 
 ```powershell
 npm run build:apk
 ```
 
-Para generar el Android App Bundle requerido por Google Play:
+Android App Bundle para Google Play:
 
 ```powershell
 npm run build:aab
 ```
 
-El AAB se guarda como `Taller-de-Ceramica.aab`. La compilación se realiza en
-Expo EAS y puede continuar en sus servidores aunque se cierre la terminal una
-vez que el proyecto terminó de subirse.
+Los textos, declaraciones, política y recursos gráficos de Google Play se encuentran en `docs/google-play/` y `play-store/`.
 
-Los textos, declaraciones, política y recursos gráficos de Google Play están
-en `docs/google-play/` y `play-store/`.
+## Estado
 
-## Funciones incluidas
-
-- Personas con frecuencia semanal o dos clases por mes.
-- Grupos creados desde la vista mensual, por día, horario y cantidad de lugares.
-- Edición de nombre, día, horario y capacidad de cada grupo.
-- Movimiento aislado de una clase por feriado o compromiso, con posibilidad de
-  deshacerlo.
-- Reajuste del patrón futuro de grupos de dos clases por mes, con historial y
-  restauración segura del turno anterior.
-- Recordatorios locales configurables por días y horas de anticipación.
-- Cada aviso incluye quiénes vienen y las cantidades de modelos a preparar.
-- Agenda individual generada desde una fecha inicial.
-- Vista mensual con cintas de color por grupo y cantidad de personas.
-- Edición manual de cada fecha: agregar, quitar o mover una persona.
-- Feriados y días cerrados, con opción de mover a todos a otra fecha.
-- Registro de ausencias que generan automáticamente una clase pendiente.
-- Asignación de recuperaciones en otro grupo.
-- Catálogo editable de modelos, sin cantidades ni control de stock.
-- Elección del modelo que hará cada alumno en una fecha concreta.
-- Resumen de modelos y materiales necesarios para preparar cada clase.
-- Preparación resumida por cantidad: por ejemplo, `2 × Taza` y `1 × Cuenco`.
-- Accesos directos desde Hoy a alumnos y próximas vacantes.
-- Acceso desde el próximo grupo al día y grupo exactos en la vista mensual.
-- Estado por persona: viene, no viene, modelo y materiales necesarios.
-- Contador de clases pendientes con acceso directo al listado de alumnos.
-- Datos persistentes en SQLite dentro del dispositivo.
-
-## Arquitectura
-
-- `models/`: entidades del dominio (`Alumno`, `Grupo`, `AgendaAlumno`,
-  `Clase`, `Modelo`, `Molde` y `Feriado`).
-- `repositories/`: operaciones de lectura y escritura separadas por entidad.
-- `database/`: conexión SQLite, esquema, datos iniciales, migraciones y
-  mantenimiento de la agenda recurrente.
-- `lib/`: reglas de presentación, vacantes y notificaciones.
-- `app/`: pantallas y navegación; no contiene consultas SQL.
-
-`lib/db.ts` se conserva únicamente como fachada de compatibilidad. El código
-nuevo debe importar el repositorio específico.
-
-Los archivos `index.html`, `styles.css` y `app.js` corresponden únicamente a la
-primera maqueta web y no participan de la aplicación Expo.
+Proyecto funcional en desarrollo continuo, orientado a Android y preparado para distribución mediante Expo EAS / Google Play.
