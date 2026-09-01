@@ -1,103 +1,130 @@
 # Taller de Cerámica
 
-Aplicación móvil de gestión para talleres de cerámica, desarrollada para organizar alumnos, grupos, clases, recuperaciones, pagos y la preparación de modelos y materiales desde un único lugar.
+Aplicación móvil desarrollada para gestionar la operación cotidiana de un taller de cerámica: alumnos, grupos, clases, asistencias, recuperaciones, pagos, vacantes, modelos y preparación de materiales.
 
-## Capturas de la aplicación
+## Capturas
 
 <p align="center">
-  <img src="./docs/screenshots/agenda.jpg" alt="Pantalla principal de agenda del taller" width="220" />
-  <img src="./docs/screenshots/calendario.jpg" alt="Vista mensual del calendario del taller" width="220" />
-  <img src="./docs/screenshots/alumnos.jpg" alt="Pantalla de alumnos y seguimiento de pagos" width="220" />
+  <img src="./docs/screenshots/agenda.jpg" width="230" alt="Agenda del taller">
+  <img src="./docs/screenshots/calendario.jpg" width="230" alt="Calendario mensual">
+  <img src="./docs/screenshots/alumnos.jpg" width="230" alt="Gestión de alumnos y pagos">
 </p>
 
 <p align="center">
-  <img src="./docs/screenshots/modelos.jpg" alt="Catálogo de modelos de cerámica" width="220" />
-  <img src="./docs/screenshots/compartir-calendario.jpg" alt="Vista previa para compartir el calendario del taller" width="220" />
+  <img src="./docs/screenshots/modelos.jpg" width="230" alt="Modelos de cerámica">
+  <img src="./docs/screenshots/compartir-calendario.jpg" width="230" alt="Compartir calendario">
 </p>
 
 ## Sobre el proyecto
 
-El objetivo de la aplicación es reemplazar anotaciones y controles dispersos por una herramienta móvil simple para la operación cotidiana de un taller.
+La aplicación busca reemplazar agendas, anotaciones y controles separados por una herramienta móvil centralizada para administrar el taller.
 
-Permite administrar grupos recurrentes, controlar asistencia, gestionar ausencias y recuperaciones, registrar el seguimiento de pagos, reorganizar clases por feriados o compromisos y anticipar qué modelos y materiales deben prepararse para cada encuentro.
-
-Además, incorpora una vista para compartir el calendario mensual del taller y accesos rápidos para revisar vacantes y la agenda próxima.
+Permite saber rápidamente quién viene a cada clase, qué lugares están disponibles, cuántas clases pendientes tiene cada alumno, quién todavía no pagó y qué modelos, moldes o materiales deben prepararse. Toda la información se guarda localmente en el dispositivo, sin depender de un backend para el funcionamiento cotidiano.
 
 ## Funcionalidades principales
 
-- Gestión de alumnos con frecuencia semanal o dos clases por mes.
-- Creación y edición de grupos por día, horario y capacidad.
-- Agenda general del taller con próximas clases y vacantes.
-- Agenda individual generada automáticamente desde una fecha inicial.
-- Vista mensual de clases y grupos con indicadores visuales.
-- Registro de ausencias con generación automática de clases pendientes.
-- Asignación de recuperaciones en otros grupos.
-- Reprogramación de una clase individual por feriado o compromiso.
-- Gestión de feriados y días cerrados con traslado de grupos completos.
-- Reajuste del patrón futuro para grupos de dos clases por mes con historial y restauración segura.
-- Seguimiento de pagos por alumno y recordatorios de cobro.
-- Catálogo editable de modelos de cerámica.
-- Elección del modelo que realizará cada alumno en una fecha concreta.
-- Resumen automático de modelos y materiales necesarios para preparar cada clase.
-- Recordatorios locales configurables por días y horas de anticipación.
-- Accesos rápidos a alumnos, próximas vacantes y clases pendientes.
-- Persistencia local de datos con SQLite.
+- Gestión de alumnos, teléfonos, grupos y cambios permanentes de grupo.
+- Grupos configurables por día, horario, capacidad y frecuencia semanal o de dos clases por mes.
+- Generación y mantenimiento automático de la agenda recurrente desde una fecha inicial.
+- Agenda general con próximas clases, asistencia y accesos rápidos a pendientes y vacantes.
+- Cálculo de cupos estructurales y lugares liberados por ausencias, con avisos de vacantes para compartir.
+- Registro y reversión de ausencias con un libro de movimientos para clases pendientes.
+- Recuperaciones de clases habituales y de clases extra, con consumo y devolución segura del saldo.
+- Cambios individuales de la próxima clase para ocupar otro lugar disponible.
+- Clases extra pagadas, a favor o pendientes de cobro.
+- Traslado de grupos completos por feriados o compromisos, con posibilidad de deshacer el cambio.
+- Reajuste del patrón futuro de grupos de dos clases por mes, con historial y restauración.
+- Seguimiento mensual de pagos, cantidad de clases abonadas y extras compradas, usadas o adeudadas.
+- Filtros de alumnos con pendientes o pagos faltantes y recordatorios mensuales configurables.
+- Calendario mensual con grupos, asistencias, movimientos y vacantes visibles por fecha.
+- Vista previa del calendario para elegir grupos y compartir una imagen.
+- Catálogo editable de modelos con tipo de arcilla, descripción y fotografías.
+- Asignación de uno o varios modelos y materiales a cada persona y clase.
+- Reutilización de pedidos de una clase ausente en un recuperatorio o en la próxima clase habitual.
+- Notificaciones locales para preparar clases, cobrar pagos y recordar copias de seguridad.
+- Copias de seguridad versionadas en JSON, restauración validada y opción de deshacer mediante una copia de emergencia.
+- Persistencia local con SQLite y migraciones compatibles con datos de versiones anteriores.
 
 ## Tecnologías
 
-- React Native
-- Expo SDK 54
-- Expo Router
-- TypeScript
-- SQLite
-- Expo EAS para compilaciones Android
+- React 19 y React Native 0.81.
+- Expo SDK 54 y Expo Router 6.
+- TypeScript 5.9.
+- SQLite mediante `expo-sqlite`.
+- Notificaciones locales mediante `expo-notifications`.
+- `expo-file-system`, `expo-document-picker` y `expo-sharing` para respaldos y archivos compartidos.
+- `expo-image-picker` para las fotografías del catálogo de modelos.
+- `react-native-view-shot` para generar la imagen del calendario compartible.
+- Expo EAS y scripts de PowerShell para compilaciones Android.
 
 ## Arquitectura
 
-El proyecto separa responsabilidades para mantener la lógica de negocio y el acceso a datos fuera de las pantallas:
+El proyecto separa la interfaz, las reglas de negocio y el acceso a datos:
 
-- `models/`: entidades del dominio como alumnos, grupos, clases, modelos y feriados.
-- `repositories/`: operaciones de lectura y escritura por entidad.
-- `database/`: conexión SQLite, esquema, migraciones y mantenimiento de agendas recurrentes.
-- `lib/`: reglas de presentación, vacantes, pagos y notificaciones.
-- `app/`: pantallas y navegación de la aplicación.
+- `app/`: pantallas y navegación basada en Expo Router.
+- `components/`: modales, controles y componentes visuales reutilizables.
+- `models/`: tipos y entidades del dominio.
+- `repositories/`: operaciones de lectura y escritura para agenda, alumnos, grupos, pagos y demás entidades.
+- `database/`: conexión SQLite, esquema, índices, migraciones y mantenimiento de la agenda.
+- `lib/`: reglas de negocio y servicios para pagos, vacantes, notificaciones, calendario y copias de seguridad.
 
-`lib/db.ts` se mantiene únicamente como fachada de compatibilidad; el código nuevo utiliza repositorios específicos.
+Las pantallas y los componentes no realizan consultas SQL directamente. `lib/db.ts` se conserva como fachada de compatibilidad y delega el acceso real en `database/` y `repositories/`.
 
-## Decisiones de diseño
+## Decisiones técnicas
 
-- Funcionamiento local para reducir dependencias externas.
-- Persistencia SQLite dentro del dispositivo.
-- Separación entre interfaz, reglas de negocio y acceso a datos.
-- Gestión segura de cambios en agendas recurrentes mediante historial y restauración.
-- Notificaciones orientadas a la operación real del taller.
-- Interfaz pensada para uso rápido en el día a día del taller.
+- Funcionamiento local y sin backend para que la gestión diaria no dependa de conectividad.
+- SQLite como fuente persistente para relaciones entre alumnos, grupos, agenda, pagos y modelos.
+- Operaciones críticas ejecutadas en transacciones para mantener sincronizados asistencia, cupos y saldos pendientes.
+- Migraciones idempotentes e índices para mantener compatibilidad y rendimiento al evolucionar el esquema.
+- Libro de movimientos para auditar ausencias, recuperaciones, ajustes manuales y reversiones.
+- Agenda recurrente que diferencia clases habituales, recuperaciones, extras y movimientos excepcionales.
+- Historial específico para reajustes de grupos y reversión segura de cambios.
+- Respaldos con formato versionado, validación previa y copia de emergencia antes de restaurar.
+- Notificaciones reconstruidas desde los datos locales, incluyendo personas y modelos de cada clase.
 
-## Ejecutar el proyecto
+## Instalación y desarrollo
 
 ```powershell
 npm install
 npx expo start
 ```
 
-Luego se puede escanear el QR con Expo Go o presionar `a` para abrir Android.
+Para generar y ejecutar el proyecto nativo en Android:
 
-## Compilaciones Android
+```powershell
+npm run android
+```
 
-APK instalable:
+Comandos de validación disponibles:
+
+```powershell
+npm test
+npm run typecheck
+npm run lint
+```
+
+## Android
+
+APK instalable mediante Expo EAS:
 
 ```powershell
 npm run build:apk
 ```
 
-Android App Bundle para Google Play:
+Android App Bundle mediante Expo EAS:
 
 ```powershell
 npm run build:aab
 ```
 
-Los textos, declaraciones, política y recursos gráficos de Google Play se encuentran en `docs/google-play/` y `play-store/`.
+AAB firmado mediante el entorno Android local:
 
-## Estado
+```powershell
+npm run build:aab:local
+```
 
-Proyecto funcional en desarrollo continuo, orientado a Android y preparado para distribución mediante Expo EAS / Google Play.
+La configuración de compilación está en `eas.json`. Los textos, declaraciones, política y recursos gráficos para Google Play se encuentran en `docs/google-play/` y `play-store/`.
+
+## Estado del proyecto
+
+Proyecto funcional en desarrollo continuo, orientado a Android y preparado para distribución mediante Expo EAS y Google Play.
