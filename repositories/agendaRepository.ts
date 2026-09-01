@@ -1,5 +1,6 @@
 import {
-  AgendaAlumno, CategoriaPendiente, Grupo, TipoMovimientoClase,
+  AgendaAlumno, CategoriaPendiente, DestinoPedidoModelos, Grupo,
+  PedidoModelosPendiente, TipoMovimientoClase,
 } from "@/models";
 import { buscarAusenciaSinCubrir } from "@/database/agendaMaintenance";
 import { databasePromise, Database } from "@/database/connection";
@@ -17,18 +18,51 @@ const SELECT_AGENDA = `
     g.nombre AS grupo_nombre,
     g.color AS grupo_color, g.hora, mo.nombre AS modelo_nombre,
     (SELECT GROUP_CONCAT(modelo_id, ',') FROM (
-      SELECT am.modelo_id
+      SELECT am.modelo_id,
+        MIN(CASE WHEN pedido.id = ag.id THEN 0 ELSE 1 END) AS prioridad,
+        MIN(pedido.id) AS pedido_id, MIN(am.orden) AS orden
       FROM agenda_modelos am
-      WHERE am.agenda_id = ag.id
-      ORDER BY am.orden, am.modelo_id
+      JOIN agenda_alumnos pedido ON pedido.id = am.agenda_id
+      WHERE (pedido.id = ag.id AND pedido.modelos_destino_agenda_id IS NULL)
+         OR pedido.modelos_destino_agenda_id = ag.id
+      GROUP BY am.modelo_id
+      ORDER BY prioridad, pedido_id, orden, am.modelo_id
     )) AS modelo_ids_csv,
     (SELECT GROUP_CONCAT(nombre, char(31)) FROM (
-      SELECT modelo_multiple.nombre
+      SELECT modelo_multiple.nombre,
+        MIN(CASE WHEN pedido.id = ag.id THEN 0 ELSE 1 END) AS prioridad,
+        MIN(pedido.id) AS pedido_id, MIN(am.orden) AS orden, am.modelo_id
       FROM agenda_modelos am
+      JOIN agenda_alumnos pedido ON pedido.id = am.agenda_id
       JOIN modelos modelo_multiple ON modelo_multiple.id = am.modelo_id
-      WHERE am.agenda_id = ag.id
-      ORDER BY am.orden, am.modelo_id
-    )) AS modelo_nombres_csv
+      WHERE (pedido.id = ag.id AND pedido.modelos_destino_agenda_id IS NULL)
+         OR pedido.modelos_destino_agenda_id = ag.id
+      GROUP BY am.modelo_id, modelo_multiple.nombre
+      ORDER BY prioridad, pedido_id, orden, am.modelo_id
+    )) AS modelo_nombres_csv,
+    COALESCE(
+      (SELECT GROUP_CONCAT(necesidad, ' · ') FROM (
+        SELECT pedido.necesidades AS necesidad,
+          MIN(CASE WHEN pedido.id = ag.id THEN 0 ELSE 1 END) AS prioridad,
+          MIN(pedido.id) AS pedido_id
+        FROM agenda_alumnos pedido
+        WHERE ((pedido.id = ag.id AND pedido.modelos_destino_agenda_id IS NULL)
+           OR pedido.modelos_destino_agenda_id = ag.id)
+          AND TRIM(COALESCE(pedido.necesidades, '')) != ''
+          AND pedido.necesidades != 'No necesita'
+        GROUP BY pedido.necesidades
+        ORDER BY prioridad, pedido_id
+      )),
+      CASE
+        WHEN ag.modelos_destino_agenda_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM agenda_alumnos pedido
+            WHERE pedido.modelos_destino_agenda_id = ag.id
+          )
+        THEN ag.necesidades
+        ELSE NULL
+      END
+    ) AS necesidades_efectivas
   FROM agenda_alumnos ag
   JOIN alumnos a ON a.id = ag.alumno_id
   JOIN grupos g ON g.id = ag.grupo_id
@@ -39,22 +73,51 @@ const SELECT_AGENDA = `
 type AgendaConsulta = AgendaAlumno & {
   modelo_ids_csv: string | null;
   modelo_nombres_csv: string | null;
+  necesidades_efectivas: string | null;
 };
 
 function mapearAgenda(item: AgendaConsulta): AgendaAlumno {
   const modeloIds = item.modelo_ids_csv
     ? item.modelo_ids_csv.split(",").map(Number).filter(Number.isFinite)
-    : item.modelo_id ? [item.modelo_id] : [];
+    : !item.modelos_destino_agenda_id && item.modelo_id ? [item.modelo_id] : [];
   const modeloNombres = item.modelo_nombres_csv
     ? item.modelo_nombres_csv.split(String.fromCharCode(31)).filter(Boolean)
-    : item.modelo_nombre ? [item.modelo_nombre] : [];
+    : !item.modelos_destino_agenda_id && item.modelo_nombre ? [item.modelo_nombre] : [];
   return {
     ...item,
     modelo_id: modeloIds[0] || null,
     modelo_nombre: modeloNombres.join(", ") || null,
     modelo_ids: modeloIds,
     modelo_nombres: modeloNombres,
+    necesidades: item.necesidades_efectivas,
   };
+}
+
+function condicionPedidoModelosPendiente(alias: string) {
+  return `(
+    EXISTS (SELECT 1 FROM agenda_modelos am WHERE am.agenda_id = ${alias}.id)
+    OR (
+      TRIM(COALESCE(${alias}.necesidades, '')) != ''
+      AND ${alias}.necesidades != 'No necesita'
+    )
+  ) AND (
+    (${alias}.modelos_destino_agenda_id IS NULL AND ${alias}.estado = 'ausente')
+    OR ${alias}.modelos_destino_agenda_id IN (
+      SELECT destino.id FROM agenda_alumnos destino WHERE destino.estado = 'ausente'
+    )
+  )`;
+}
+
+async function asignarPedidosModelosPendientes(
+  db: Database,
+  alumnoId: number,
+  destinoAgendaId: number
+) {
+  await db.runAsync(`
+    UPDATE agenda_alumnos
+    SET modelos_destino_agenda_id = ?
+    WHERE alumno_id = ? AND ${condicionPedidoModelosPendiente("agenda_alumnos")}
+  `, destinoAgendaId, alumnoId);
 }
 
 type AgendaCancelable = Pick<AgendaAlumno,
@@ -180,6 +243,11 @@ export async function cancelarAgendaEnDb(
     );
   }
 
+  await db.runAsync(
+    `UPDATE agenda_alumnos SET modelos_destino_agenda_id = NULL
+     WHERE modelos_destino_agenda_id = ? OR id = ?`,
+    item.id, item.id
+  );
   await db.runAsync("UPDATE agenda_alumnos SET estado = 'cancelada' WHERE id = ?", item.id);
   return true;
 }
@@ -250,6 +318,39 @@ export const agendaRepository = {
     return items.map(mapearAgenda);
   },
 
+  async pedidoModelosPendiente(alumnoId: number, desde: string) {
+    const db = await databasePromise;
+    const filas = await db.getAllAsync<{
+      modelo_nombre: string | null;
+      necesidades: string | null;
+    }>(`
+      SELECT m.nombre AS modelo_nombre, origen.necesidades
+      FROM agenda_alumnos origen
+      LEFT JOIN agenda_modelos am ON am.agenda_id = origen.id
+      LEFT JOIN modelos m ON m.id = am.modelo_id
+      WHERE origen.alumno_id = ? AND ${condicionPedidoModelosPendiente("origen")}
+      ORDER BY origen.fecha, origen.id, am.orden, am.modelo_id
+    `, alumnoId);
+    if (!filas.length) return null;
+    const proxima = await db.getFirstAsync<{ fecha: string }>(`
+      SELECT fecha FROM agenda_alumnos
+      WHERE alumno_id = ? AND tipo = 'regular' AND estado = 'programada'
+        AND fecha > ?
+      ORDER BY fecha, id LIMIT 1
+    `, alumnoId, desde);
+    return {
+      modelo_nombres: [...new Set(
+        filas.map(item => item.modelo_nombre).filter((item): item is string => !!item)
+      )],
+      necesidades: [...new Set(
+        filas.map(item => item.necesidades).filter(
+          (item): item is string => !!item && item !== "No necesita"
+        )
+      )],
+      proxima_clase_fecha: proxima?.fecha || null,
+    } satisfies PedidoModelosPendiente;
+  },
+
   async registrarAusencia(alumnoId: number, grupoId: number, fecha: string) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
@@ -313,7 +414,9 @@ export const agendaRepository = {
         agenda.id
       );
       await db.runAsync(
-        "UPDATE agenda_alumnos SET estado = 'programada' WHERE id = ?",
+        `UPDATE agenda_alumnos
+         SET estado = 'programada', modelos_destino_agenda_id = NULL
+         WHERE id = ?`,
         agenda.id
       );
       if (movimiento || (ausencia && !agenda.extra_adeudada)) {
@@ -338,7 +441,8 @@ export const agendaRepository = {
     alumnoId: number,
     grupoId: number,
     fecha: string,
-    categoria: CategoriaPendiente = "regular"
+    categoria: CategoriaPendiente = "regular",
+    destinoPedidoModelos?: DestinoPedidoModelos
   ) {
     const db = await databasePromise;
     await db.withTransactionAsync(async () => {
@@ -380,6 +484,22 @@ export const agendaRepository = {
         alumnoId, fecha
       );
       if (!agenda) throw new Error("No se pudo crear la recuperación");
+      if (destinoPedidoModelos) {
+        let destinoAgendaId = agenda.id;
+        if (destinoPedidoModelos === "proxima_clase") {
+          const proxima = await db.getFirstAsync<{ id: number }>(`
+            SELECT id FROM agenda_alumnos
+            WHERE alumno_id = ? AND tipo = 'regular' AND estado = 'programada'
+              AND fecha > ?
+            ORDER BY fecha, id LIMIT 1
+          `, alumnoId, fecha);
+          if (!proxima) {
+            throw new Error("No hay una próxima clase habitual para dejar el pedido");
+          }
+          destinoAgendaId = proxima.id;
+        }
+        await asignarPedidosModelosPendientes(db, alumnoId, destinoAgendaId);
+      }
       await registrarMovimientoAgenda(db, {
         alumnoId,
         agendaId: agenda.id,
@@ -604,7 +724,9 @@ export const agendaRepository = {
         if (!resultado.changes) throw new Error("Uno de los modelos elegidos ya no existe");
       }
       await db.runAsync(
-        "UPDATE agenda_alumnos SET modelo_id = ?, necesidades = ? WHERE id = ?",
+        `UPDATE agenda_alumnos
+         SET modelo_id = ?, necesidades = ?, modelos_destino_agenda_id = NULL
+         WHERE id = ?`,
         ids[0] || null, necesidades.trim() || null, agendaId
       );
     });
@@ -619,8 +741,13 @@ export const asignarRecuperacion = (
   alumnoId: number,
   grupoId: number,
   fecha: string,
-  categoria: CategoriaPendiente = "regular"
-) => agendaRepository.asignarRecuperacion(alumnoId, grupoId, fecha, categoria);
+  categoria: CategoriaPendiente = "regular",
+  destinoPedidoModelos?: DestinoPedidoModelos
+) => agendaRepository.asignarRecuperacion(
+  alumnoId, grupoId, fecha, categoria, destinoPedidoModelos
+);
+export const pedidoModelosPendienteAlumno = (alumnoId: number, desde: string) =>
+  agendaRepository.pedidoModelosPendiente(alumnoId, desde);
 export const asignarClaseExtra = (alumnoId: number, grupoId: number, fecha: string) =>
   agendaRepository.asignarClaseExtra(alumnoId, grupoId, fecha);
 export const asignarClaseExtraAdeudada = (alumnoId: number, grupoId: number, fecha: string) =>

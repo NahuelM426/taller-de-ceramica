@@ -5,7 +5,12 @@ import { crearEsquema, migrarModelosMultiples } from "../database/schema";
 import {
   agendaDelDia,
   asignarModelosAgenda,
+  asignarRecuperacion,
+  pedidoModelosPendienteAlumno,
+  quitarFechaAgenda,
+  registrarAusencia,
 } from "../repositories/agendaRepository";
+import { notificacionRepository } from "../repositories/notificacionRepository";
 import {
   databasePromise,
   reiniciarBasePrueba,
@@ -26,7 +31,10 @@ async function prepararBase() {
     VALUES (1,'Taza','Blanca'),(2,'Plato','Roja'),(3,'Jarrón','Blanca');
     INSERT INTO agenda_alumnos
       (id,alumno_id,grupo_id,fecha,tipo,estado)
-    VALUES (10,1,1,'2026-09-01','regular','programada');
+    VALUES
+      (10,1,1,'2026-09-01','regular','programada'),
+      (11,1,1,'2026-09-08','regular','programada'),
+      (12,1,1,'2026-09-15','regular','programada');
   `);
   return db;
 }
@@ -79,5 +87,57 @@ describe("modelos múltiples por persona y clase", () => {
       "SELECT modelo_id FROM agenda_modelos WHERE agenda_id=10"
     );
     assert.deepEqual(relaciones, [{ modelo_id: 3 }]);
+  });
+
+  test("permite usar en el recuperatorio el pedido de una clase ausente", async () => {
+    await asignarModelosAgenda(10, [1], "Arcilla blanca");
+    await registrarAusencia(1, 1, "2026-09-01");
+
+    const pedido = await pedidoModelosPendienteAlumno(1, "2026-09-03");
+    assert.deepEqual(pedido, {
+      modelo_nombres: ["Taza"],
+      necesidades: ["Arcilla blanca"],
+      proxima_clase_fecha: "2026-09-08",
+    });
+
+    await asignarRecuperacion(1, 1, "2026-09-03", "regular", "recuperacion");
+
+    const [ausencia] = await agendaDelDia("2026-09-01");
+    const [recuperacion] = await agendaDelDia("2026-09-03");
+    const personasAviso = await notificacionRepository.listarPersonas(1, "2026-09-03");
+    assert.deepEqual(ausencia.modelo_nombres, []);
+    assert.equal(ausencia.necesidades, null);
+    assert.deepEqual(recuperacion.modelo_nombres, ["Taza"]);
+    assert.equal(recuperacion.necesidades, "Arcilla blanca");
+    assert.deepEqual(personasAviso, [{ nombre: "Ana", modelo_nombres: ["Taza"] }]);
+  });
+
+  test("deja el pedido para la próxima clase y combina modelos sin duplicarlos", async () => {
+    await asignarModelosAgenda(10, [1], "Molde grande");
+    await asignarModelosAgenda(11, [2, 1], "Esmalte rojo");
+    await registrarAusencia(1, 1, "2026-09-01");
+
+    await asignarRecuperacion(1, 1, "2026-09-03", "regular", "proxima_clase");
+
+    const [recuperacion] = await agendaDelDia("2026-09-03");
+    const [proxima] = await agendaDelDia("2026-09-08");
+    assert.deepEqual(recuperacion.modelo_nombres, []);
+    assert.deepEqual(proxima.modelo_nombres, ["Taza", "Plato"]);
+    assert.equal(proxima.necesidades, "Esmalte rojo · Molde grande");
+  });
+
+  test("quitar el recuperatorio devuelve el pedido a pendientes", async () => {
+    await asignarModelosAgenda(10, [1], "Asa ancha");
+    await registrarAusencia(1, 1, "2026-09-01");
+    await asignarRecuperacion(1, 1, "2026-09-03", "regular", "recuperacion");
+    const [recuperacion] = await agendaDelDia("2026-09-03");
+
+    await quitarFechaAgenda(recuperacion.id);
+
+    const pedido = await pedidoModelosPendienteAlumno(1, "2026-09-04");
+    const [ausencia] = await agendaDelDia("2026-09-01");
+    assert.deepEqual(pedido?.modelo_nombres, ["Taza"]);
+    assert.deepEqual(ausencia.modelo_nombres, ["Taza"]);
+    assert.equal(ausencia.necesidades, "Asa ancha");
   });
 });

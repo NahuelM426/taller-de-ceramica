@@ -6,6 +6,7 @@ import { AddButton, Empty, Screen, ui } from "@/components/ui";
 import { AgregarPersonaModal } from "@/components/agenda/AgregarPersonaModal";
 import { CalendarioFechaModal } from "@/components/agenda/CalendarioFechaModal";
 import { ModeloPersonaModal } from "@/components/agenda/ModeloPersonaModal";
+import { ResolverPedidoModelosModal } from "@/components/agenda/ResolverPedidoModelosModal";
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
 import { CompartirCalendarioModal } from "@/components/calendario/CompartirCalendarioModal";
 import { ConfirmarReajusteModal } from "@/components/calendario/ConfirmarReajusteModal";
@@ -17,6 +18,7 @@ import { useCalendarioData } from "@/hooks/useCalendarioData";
 import {
   asignarClaseExtraAdeudada, asignarModelosAgenda,
   asignarRecuperacion, cambiarClaseParaCubrir,
+  pedidoModelosPendienteAlumno,
   quitarFechaAgenda, registrarAusencia, revertirAusencia,
 } from "@/repositories/agendaRepository";
 import { fijarAlumnoEnGrupo } from "@/repositories/alumnoRepository";
@@ -47,7 +49,10 @@ import {
   cancelarSeleccionMotivo,
   confirmarSeleccionMotivo,
 } from "@/lib/seleccionMotivoMovimiento";
-import { AgendaAlumno, Grupo, TipoMovimientoClase } from "@/models";
+import {
+  AgendaAlumno, DestinoPedidoModelos, Grupo, PedidoModelosPendiente,
+  TipoMovimientoClase,
+} from "@/models";
 
 const diasCompletos = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const iso = (year: number, month: number, day: number) =>
@@ -95,6 +100,13 @@ export default function CalendarioScreen() {
   const [motivoMovimiento, setMotivoMovimiento] = useState<TipoMovimientoClase | null>(null);
   const [selectorModeloVisible, setSelectorModeloVisible] = useState(false);
   const [editAgenda, setEditAgenda] = useState<AgendaAlumno | null>(null);
+  const [pedidoModelosPorResolver, setPedidoModelosPorResolver] = useState<{
+    alumnoId: number;
+    alumnoNombre: string;
+    tipo: TipoOcupacion;
+    pedido: PedidoModelosPendiente;
+  } | null>(null);
+  const [guardandoPedidoModelos, setGuardandoPedidoModelos] = useState(false);
   const [reajustePendiente, setReajustePendiente] = useState<ReajustePendiente | null>(null);
   const [guardandoReajuste, setGuardandoReajuste] = useState(false);
   const [errorReajuste, setErrorReajuste] = useState<string | null>(null);
@@ -106,6 +118,7 @@ export default function CalendarioScreen() {
     gruposDelDiaSeleccionado
   ) &&
     !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible &&
+    !pedidoModelosPorResolver &&
     !selectorMotivoVisible && !reajustePendiente;
   useFocusEffect(useCallback(() => () => {
     handledRoute.current = "";
@@ -175,7 +188,11 @@ export default function CalendarioScreen() {
       } },
     ]
   );
-  const agregar = async (alumnoId: number, tipo: TipoOcupacion) => {
+  const completarAgregado = async (
+    alumnoId: number,
+    tipo: TipoOcupacion,
+    destinoPedidoModelos?: DestinoPedidoModelos
+  ) => {
     const alumno = alumnos.find(item => item.id === alumnoId);
     if (!alumno || !selectedDate) return false;
     if (selectedDate < hoyTexto) {
@@ -194,9 +211,13 @@ export default function CalendarioScreen() {
     );
     try {
       if (tipo === "recuperacion") {
-        await asignarRecuperacion(alumno.id, grupoDestinoId, selectedDate);
+        await asignarRecuperacion(
+          alumno.id, grupoDestinoId, selectedDate, "regular", destinoPedidoModelos
+        );
       } else if (tipo === "recuperacion_extra") {
-        await asignarRecuperacion(alumno.id, grupoDestinoId, selectedDate, "extra");
+        await asignarRecuperacion(
+          alumno.id, grupoDestinoId, selectedDate, "extra", destinoPedidoModelos
+        );
       } else if (tipo === "extra_debe") {
         await asignarClaseExtraAdeudada(alumno.id, grupoDestinoId, selectedDate);
       } else if (tipo === "fijar") {
@@ -216,6 +237,40 @@ export default function CalendarioScreen() {
       );
       return false;
     }
+  };
+  const agregar = async (alumnoId: number, tipo: TipoOcupacion) => {
+    if ((tipo === "recuperacion" || tipo === "recuperacion_extra") && selectedDate) {
+      try {
+        const pedido = await pedidoModelosPendienteAlumno(alumnoId, selectedDate);
+        if (pedido) {
+          const alumno = alumnos.find(item => item.id === alumnoId);
+          if (!alumno) return false;
+          setSelectorAlumnoVisible(false);
+          setPedidoModelosPorResolver({
+            alumnoId,
+            alumnoNombre: alumno.nombre,
+            tipo,
+            pedido,
+          });
+          return true;
+        }
+      } catch {
+        Alert.alert("No se pudo revisar el pedido", "Probá nuevamente en unos segundos.");
+        return false;
+      }
+    }
+    return completarAgregado(alumnoId, tipo);
+  };
+  const resolverPedidoModelos = async (destino: DestinoPedidoModelos) => {
+    if (!pedidoModelosPorResolver || guardandoPedidoModelos) return;
+    setGuardandoPedidoModelos(true);
+    const guardado = await completarAgregado(
+      pedidoModelosPorResolver.alumnoId,
+      pedidoModelosPorResolver.tipo,
+      destino
+    );
+    if (guardado) setPedidoModelosPorResolver(null);
+    setGuardandoPedidoModelos(false);
   };
   const abrirEdicionModelo = (item: AgendaAlumno) => {
     setEditAgenda(item);
@@ -520,7 +575,7 @@ export default function CalendarioScreen() {
       )}
 
       <DetalleDiaModal
-        visible={!selectorGrupoDiaVisible && detalleDiaDebeEstarVisible({
+        visible={!pedidoModelosPorResolver && !selectorGrupoDiaVisible && detalleDiaDebeEstarVisible({
           fechaSeleccionada: selectedDate,
           selectorAlumnoVisible,
           selectorFechaVisible,
@@ -575,6 +630,17 @@ export default function CalendarioScreen() {
         grupoDestino={grupoDestinoSeleccionado}
         onClose={() => setSelectorAlumnoVisible(false)}
         onConfirm={agregar}
+      />
+      <ResolverPedidoModelosModal
+        visible={!!pedidoModelosPorResolver}
+        alumnoNombre={pedidoModelosPorResolver?.alumnoNombre || "la persona"}
+        pedido={pedidoModelosPorResolver?.pedido || null}
+        guardando={guardandoPedidoModelos}
+        onClose={() => {
+          if (guardandoPedidoModelos) return;
+          setPedidoModelosPorResolver(null);
+        }}
+        onSelect={resolverPedidoModelos}
       />
       <SeleccionarMotivoMovimientoModal
         visible={selectorMotivoVisible}

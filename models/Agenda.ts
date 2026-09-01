@@ -2,6 +2,13 @@ import type { TipoMovimientoClase } from "./Feriado";
 
 export type TipoAgenda = "regular" | "recuperacion" | "manual";
 export type EstadoAgenda = "programada" | "presente" | "ausente" | "cancelada";
+export type DestinoPedidoModelos = "recuperacion" | "proxima_clase";
+
+export interface PedidoModelosPendiente {
+  modelo_nombres: string[];
+  necesidades: string[];
+  proxima_clase_fecha: string | null;
+}
 
 export interface AgendaAlumno {
   id: number;
@@ -28,4 +35,5 @@ export interface AgendaAlumno {
   motivo_movimiento?: TipoMovimientoClase | null;
   pago_extra_mes?: string | null;
   extra_adeudada?: number;
+  modelos_destino_agenda_id?: number | null;
 }

@@ -33,11 +33,16 @@ export const notificacionRepository = {
     }>(`
       SELECT a.nombre, m.nombre AS modelo_nombre,
         (SELECT GROUP_CONCAT(nombre, char(31)) FROM (
-          SELECT mm.nombre
+          SELECT mm.nombre,
+            MIN(CASE WHEN pedido.id = ag.id THEN 0 ELSE 1 END) AS prioridad,
+            MIN(pedido.id) AS pedido_id, MIN(am.orden) AS orden, am.modelo_id
           FROM agenda_modelos am
+          JOIN agenda_alumnos pedido ON pedido.id = am.agenda_id
           JOIN modelos mm ON mm.id = am.modelo_id
-          WHERE am.agenda_id = ag.id
-          ORDER BY am.orden, am.modelo_id
+          WHERE (pedido.id = ag.id AND pedido.modelos_destino_agenda_id IS NULL)
+             OR pedido.modelos_destino_agenda_id = ag.id
+          GROUP BY am.modelo_id, mm.nombre
+          ORDER BY prioridad, pedido_id, orden, am.modelo_id
         )) AS modelos_csv
       FROM agenda_alumnos ag
       JOIN alumnos a ON a.id = ag.alumno_id

@@ -9,7 +9,7 @@ type ValorSql = string | number | null;
 type FilaCopia = Record<string, ValorSql>;
 
 const FORMATO = "taller-de-ceramica";
-const VERSION_FORMATO = 9;
+const VERSION_FORMATO = 10;
 const ARCHIVO_EMERGENCIA = "taller-ceramica-antes-de-restaurar.json";
 const LIMITE_ARCHIVO = 100 * 1024 * 1024;
 
@@ -50,6 +50,7 @@ const tablas = [
       "id", "alumno_id", "grupo_id", "fecha", "tipo", "estado", "modelo_id",
       "necesidades", "cubre_agenda_id", "origen_agenda_id", "feriado_origen",
       "feriado_tipo_origen", "motivo_movimiento", "pago_extra_mes", "extra_adeudada",
+      "modelos_destino_agenda_id",
     ],
   },
   {
@@ -128,7 +129,7 @@ function validarCopia(valor: unknown): CopiaSeguridad {
   }
   const versionRecibida = candidata.versionFormato;
   if (typeof versionRecibida !== "number" ||
-      ![1, 2, 3, 4, 5, 6, 7, 8, VERSION_FORMATO].includes(versionRecibida)) {
+      ![1, 2, 3, 4, 5, 6, 7, 8, 9, VERSION_FORMATO].includes(versionRecibida)) {
     throw new Error("La versión de esta copia todavía no es compatible.");
   }
   if (typeof candidata.creadaEn !== "string" || !candidata.tablas ||
@@ -181,6 +182,11 @@ function validarCopia(valor: unknown): CopiaSeguridad {
         if (versionRecibida < 9 && tabla.nombre === "movimientos_pendientes" &&
             columna === "categoria" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
           limpio[columna] = "regular";
+          continue;
+        }
+        if (versionRecibida < 10 && tabla.nombre === "agenda_alumnos" &&
+            columna === "modelos_destino_agenda_id" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = null;
           continue;
         }
         if (versionRecibida < 7 && tabla.nombre === "pagos_alumnos" &&

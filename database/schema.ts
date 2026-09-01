@@ -45,6 +45,7 @@ export async function crearEsquema(db: Database) {
       origen_agenda_id INTEGER, feriado_origen TEXT, feriado_tipo_origen TEXT,
       motivo_movimiento TEXT, pago_extra_mes TEXT,
       extra_adeudada INTEGER NOT NULL DEFAULT 0 CHECK(extra_adeudada IN (0,1)),
+      modelos_destino_agenda_id INTEGER,
       UNIQUE(alumno_id, fecha),
       FOREIGN KEY (alumno_id) REFERENCES alumnos(id),
       FOREIGN KEY (grupo_id) REFERENCES grupos(id)
@@ -177,6 +178,7 @@ export async function migrarColumnas(db: Database) {
     ["motivo_movimiento", "TEXT"],
     ["pago_extra_mes", "TEXT"],
     ["extra_adeudada", "INTEGER NOT NULL DEFAULT 0"],
+    ["modelos_destino_agenda_id", "INTEGER"],
   ];
   for (const [nombre, tipo] of columnasAgenda) {
     if (!agenda.some(item => item.name === nombre)) {
@@ -296,6 +298,8 @@ export async function crearIndices(db: Database) {
       ON agenda_alumnos(cubre_agenda_id, estado);
     CREATE INDEX IF NOT EXISTS idx_agenda_origen_estado
       ON agenda_alumnos(origen_agenda_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_agenda_modelos_destino
+      ON agenda_alumnos(modelos_destino_agenda_id, estado);
     CREATE INDEX IF NOT EXISTS idx_movimientos_alumno_id
       ON movimientos_pendientes(alumno_id, id);
     CREATE INDEX IF NOT EXISTS idx_movimientos_alumno_categoria_id

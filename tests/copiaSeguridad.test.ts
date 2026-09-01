@@ -235,6 +235,30 @@ describe("copia y restauración de datos", () => {
     ]);
   });
 
+  test("respalda el destino de un pedido trasladado", async () => {
+    const db = await databasePromise;
+    await db.execAsync(`
+      INSERT INTO agenda_alumnos
+        (id,alumno_id,grupo_id,fecha,tipo,estado)
+      VALUES (2,1,1,'2026-08-14','recuperacion','programada');
+      UPDATE agenda_alumnos SET modelos_destino_agenda_id=2 WHERE id=1;
+    `);
+    await compartirCopiaSeguridad();
+    const uri = ultimoArchivoCompartido();
+    assert.ok(uri);
+
+    await db.runAsync("UPDATE agenda_alumnos SET modelos_destino_agenda_id=NULL WHERE id=1");
+    elegirDocumentoPrueba(uri);
+    const seleccion = await elegirCopiaSeguridad();
+    assert.ok(seleccion);
+    await restaurarCopiaSeguridad(seleccion.copia);
+
+    const agenda = await db.getFirstAsync<{ modelos_destino_agenda_id: number | null }>(
+      "SELECT modelos_destino_agenda_id FROM agenda_alumnos WHERE id=1"
+    );
+    assert.equal(agenda?.modelos_destino_agenda_id, 2);
+  });
+
   test("respalda y restaura el historial mensual de pagos", async () => {
     const db = await databasePromise;
     await db.runAsync(
@@ -381,6 +405,9 @@ describe("copia y restauración de datos", () => {
       tablas: Record<string, Array<Record<string, unknown>>>;
     };
     contenido.versionFormato = 8;
+    for (const agenda of contenido.tablas.agenda_alumnos) {
+      delete agenda.modelos_destino_agenda_id;
+    }
     for (const movimiento of contenido.tablas.movimientos_pendientes) {
       delete movimiento.categoria;
     }
@@ -396,6 +423,10 @@ describe("copia y restauración de datos", () => {
     const movimiento = await db.getFirstAsync<{ categoria: string }>(
       "SELECT categoria FROM movimientos_pendientes WHERE alumno_id=1"
     );
+    const agenda = await db.getFirstAsync<{ modelos_destino_agenda_id: number | null }>(
+      "SELECT modelos_destino_agenda_id FROM agenda_alumnos WHERE id=1"
+    );
     assert.equal(movimiento?.categoria, "regular");
+    assert.equal(agenda?.modelos_destino_agenda_id, null);
   });
 });
