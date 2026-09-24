@@ -53,6 +53,8 @@ export interface HistorialReajusteActivo {
   fecha_destino: string;
   fecha_inicio_anterior: string | null;
   fecha_inicio_nueva: string;
+  dia_anterior: number | null;
+  dia_nuevo: number | null;
   fecha_hasta: string;
   agenda_anterior: string;
   agenda_generada: string;
@@ -83,15 +85,15 @@ function fechasDelPatron(grupo: Grupo, desde: string, hasta: string) {
   return fechas;
 }
 
-function validarDestino(grupo: Grupo, origen: string, destino: string) {
+function validarDestino(grupo: Grupo, origen: string, destino: string, nuevoDia: number) {
   if (grupo.frecuencia !== "quincenal") {
     throw new Error("El reajuste solamente se puede usar en grupos de 2 veces por mes");
   }
   if (destino === origen) {
     throw new Error("La nueva fecha debe ser distinta de la clase que se reajusta");
   }
-  if (fechaMediodia(destino).getDay() !== grupo.dia) {
-    throw new Error("La nueva fecha debe caer el mismo día de la semana del grupo");
+  if (fechaMediodia(destino).getDay() !== nuevoDia) {
+    throw new Error("La nueva fecha no coincide con el nuevo día del grupo");
   }
 }
 
@@ -131,7 +133,8 @@ function leerAgendaGenerada(valor: string): AgendaGeneradaReajuste {
 export async function reajustarGrupo(
   grupoId: number,
   fechaOrigen: string,
-  fechaDestino: string
+  fechaDestino: string,
+  nuevoDia?: number
 ) {
   const db = await databasePromise;
   let cantidad = 0;
@@ -141,7 +144,8 @@ export async function reajustarGrupo(
       grupoId
     );
     if (!grupo) throw new Error("No se encontró el grupo");
-    validarDestino(grupo, fechaOrigen, fechaDestino);
+    const diaDestino = nuevoDia ?? grupo.dia;
+    validarDestino(grupo, fechaOrigen, fechaDestino, diaDestino);
 
     const claseOrigen = await db.getFirstAsync<{ cantidad: number }>(
       `SELECT COUNT(*) AS cantidad FROM agenda_alumnos
@@ -168,7 +172,7 @@ export async function reajustarGrupo(
     const fechaHasta = [fechaDentroDe(370), ultima?.fecha || fechaDestino, fechaDestino]
       .sort()
       .at(-1) as string;
-    const grupoNuevo: Grupo = { ...grupo, fecha_inicio: fechaDestino };
+    const grupoNuevo: Grupo = { ...grupo, dia: diaDestino, fecha_inicio: fechaDestino };
     let fechasNuevas = fechasDelPatron(grupoNuevo, fechaDestino, fechaHasta);
     if (fechaDestino < fechaOrigen) {
       const mesDestino = fechaDestino.slice(0, 7);
@@ -266,10 +270,10 @@ export async function reajustarGrupo(
     const historial = await db.runAsync(
       `INSERT INTO reajustes_grupo
        (grupo_id,fecha_origen,fecha_destino,fecha_inicio_anterior,fecha_inicio_nueva,
-        fecha_hasta,agenda_anterior,agenda_generada,creado_en)
-       VALUES (?,?,?,?,?,?,?,'[]',?)`,
+        dia_anterior,dia_nuevo,fecha_hasta,agenda_anterior,agenda_generada,creado_en)
+       VALUES (?,?,?,?,?,?,?,?,?,'[]',?)`,
       grupoId, fechaOrigen, fechaDestino, grupo.fecha_inicio, fechaDestino,
-      fechaHasta, JSON.stringify(anteriores), creadoEn
+      grupo.dia, diaDestino, fechaHasta, JSON.stringify(anteriores), creadoEn
     );
     const idReajuste = historial.lastInsertRowId;
     const generadas: AgendaReajustada[] = [];
@@ -356,7 +360,12 @@ export async function reajustarGrupo(
       }
     }
 
-    await db.runAsync("UPDATE grupos SET fecha_inicio = ? WHERE id = ?", fechaDestino, grupoId);
+    await db.runAsync(
+      "UPDATE grupos SET dia = ?, fecha_inicio = ? WHERE id = ?",
+      diaDestino,
+      fechaDestino,
+      grupoId
+    );
     await db.runAsync(
       `INSERT INTO feriados (fecha,grupo_id,motivo,fecha_recuperacion,tipo)
        VALUES (?,?,? ,?,'reajuste')
@@ -481,7 +490,8 @@ async function deshacerReajusteActivo(grupoId: number, fechaOrigen?: string) {
       "SELECT * FROM grupos WHERE id = ? AND activo = 1",
       historial.grupo_id
     );
-    if (!grupo || grupo.fecha_inicio !== historial.fecha_inicio_nueva) {
+    if (!grupo || grupo.fecha_inicio !== historial.fecha_inicio_nueva ||
+        (historial.dia_nuevo != null && grupo.dia !== historial.dia_nuevo)) {
       throw new Error("No se puede deshacer porque el patrón del grupo cambió después");
     }
 
@@ -658,13 +668,16 @@ async function deshacerReajusteActivo(grupoId: number, fechaOrigen?: string) {
       restauradas += 1;
     }
 
+    const diaAnterior = historial.dia_anterior ?? grupo.dia;
     await db.runAsync(
-      "UPDATE grupos SET fecha_inicio = ? WHERE id = ?",
+      "UPDATE grupos SET dia = ?, fecha_inicio = ? WHERE id = ?",
+      diaAnterior,
       historial.fecha_inicio_anterior,
       historial.grupo_id
     );
     const grupoAnterior: Grupo = {
       ...grupo,
+      dia: diaAnterior,
       fecha_inicio: historial.fecha_inicio_anterior,
     };
     const fechasAnteriores = fechasDelPatron(

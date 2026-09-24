@@ -5,6 +5,12 @@ export interface ReajustePendiente {
   grupoNombre: string;
   fechaOrigen: string;
   fechaDestino: string;
+  nuevoDia?: number;
+}
+
+export interface AlcanceReajustePendiente extends ReajustePendiente {
+  diaAnterior: number;
+  nuevoDia: number;
 }
 
 export interface BloqueoReajuste {
@@ -19,7 +25,8 @@ export const motivosMovimientoCalendario = opcionesMotivoMovimiento.map(opcion =
 export function prepararConfirmacionReajuste(
   grupo: { id: number; nombre: string },
   fechaOrigen: string,
-  fechaDestino: string
+  fechaDestino: string,
+  nuevoDia?: number
 ) {
   return {
     selectorFechaVisible: false,
@@ -28,6 +35,7 @@ export function prepararConfirmacionReajuste(
       grupoNombre: grupo.nombre,
       fechaOrigen,
       fechaDestino,
+      ...(nuevoDia == null ? {} : { nuevoDia }),
     } satisfies ReajustePendiente,
   };
 }
@@ -43,13 +51,15 @@ export function detalleDiaDebeEstarVisible(input: {
   selectorModeloVisible: boolean;
   selectorMotivoVisible?: boolean;
   reajustePendiente: ReajustePendiente | null;
+  alcanceReajustePendiente?: AlcanceReajustePendiente | null;
 }) {
   return !!input.fechaSeleccionada &&
     !input.selectorAlumnoVisible &&
     !input.selectorFechaVisible &&
     !input.selectorModeloVisible &&
     !input.selectorMotivoVisible &&
-    !input.reajustePendiente;
+    !input.reajustePendiente &&
+    !input.alcanceReajustePendiente;
 }
 
 export function controlesReajusteDeshabilitados(guardando: boolean) {

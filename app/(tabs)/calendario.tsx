@@ -10,6 +10,7 @@ import { ResolverPedidoModelosModal } from "@/components/agenda/ResolverPedidoMo
 import { CalendarioMes } from "@/components/calendario/CalendarioMes";
 import { CompartirCalendarioModal } from "@/components/calendario/CompartirCalendarioModal";
 import { ConfirmarReajusteModal } from "@/components/calendario/ConfirmarReajusteModal";
+import { ElegirAlcanceReajusteModal } from "@/components/calendario/ElegirAlcanceReajusteModal";
 import { DetalleDiaModal } from "@/components/calendario/DetalleDiaModal";
 import { GrupoFormModal } from "@/components/calendario/GrupoFormModal";
 import { SeleccionarMotivoMovimientoModal } from "@/components/calendario/SeleccionarMotivoMovimientoModal";
@@ -42,6 +43,7 @@ import {
   detalleDiaDebeEstarVisible,
   ejecutarReajusteUnaVez,
   prepararConfirmacionReajuste,
+  type AlcanceReajustePendiente,
   type ReajustePendiente,
 } from "@/lib/flujoReajuste";
 import {
@@ -108,10 +110,15 @@ export default function CalendarioScreen() {
   } | null>(null);
   const [guardandoPedidoModelos, setGuardandoPedidoModelos] = useState(false);
   const [reajustePendiente, setReajustePendiente] = useState<ReajustePendiente | null>(null);
+  const [alcanceReajustePendiente, setAlcanceReajustePendiente] =
+    useState<AlcanceReajustePendiente | null>(null);
+  const [guardandoCambioPuntual, setGuardandoCambioPuntual] = useState(false);
+  const [errorAlcanceReajuste, setErrorAlcanceReajuste] = useState<string | null>(null);
   const [guardandoReajuste, setGuardandoReajuste] = useState(false);
   const [errorReajuste, setErrorReajuste] = useState<string | null>(null);
   const [calendarioCompartibleVisible, setCalendarioCompartibleVisible] = useState(false);
   const bloqueoReajuste = useRef({ actual: false });
+  const bloqueoCambioPuntual = useRef(false);
   const selectorGrupoDiaVisible = debeElegirGrupoDelDia(
     selectedDate,
     detailGroupId,
@@ -119,7 +126,7 @@ export default function CalendarioScreen() {
   ) &&
     !selectorAlumnoVisible && !selectorFechaVisible && !selectorModeloVisible &&
     !pedidoModelosPorResolver &&
-    !selectorMotivoVisible && !reajustePendiente;
+    !selectorMotivoVisible && !reajustePendiente && !alcanceReajustePendiente;
   useFocusEffect(useCallback(() => () => {
     handledRoute.current = "";
     handledAlumno.current = "";
@@ -298,21 +305,16 @@ export default function CalendarioScreen() {
       return;
     }
     if (motivoMovimiento === "reajuste") {
-      if (new Date(`${fechaRecuperacion}T12:00:00`).getDay() !== grupo.dia) {
-        Alert.alert(
-          "Elegí el mismo día de la semana",
-          `El grupo ${grupo.nombre} se reúne los ${diasCompletos[grupo.dia].toLowerCase()}.`
-        );
-        return;
-      }
-      const confirmacion = prepararConfirmacionReajuste(
-        grupo,
-        selectedDate,
-        fechaRecuperacion
-      );
-      setSelectorFechaVisible(confirmacion.selectorFechaVisible);
-      setErrorReajuste(null);
-      setReajustePendiente(confirmacion.reajustePendiente);
+      setSelectorFechaVisible(false);
+      setErrorAlcanceReajuste(null);
+      setAlcanceReajustePendiente({
+        grupoId: grupo.id,
+        grupoNombre: grupo.nombre,
+        fechaOrigen: selectedDate,
+        fechaDestino: fechaRecuperacion,
+        diaAnterior: grupo.dia,
+        nuevoDia: new Date(`${fechaRecuperacion}T12:00:00`).getDay(),
+      });
       return;
     }
     try {
@@ -367,6 +369,57 @@ export default function CalendarioScreen() {
     setMotivoMovimiento(null);
   };
 
+  const cancelarAlcanceReajuste = () => {
+    if (guardandoCambioPuntual) return;
+    setAlcanceReajustePendiente(null);
+    setErrorAlcanceReajuste(null);
+    setMotivoMovimiento(null);
+  };
+
+  const moverSoloEstaClase = async () => {
+    const pendiente = alcanceReajustePendiente;
+    if (!pendiente || bloqueoCambioPuntual.current) return;
+    bloqueoCambioPuntual.current = true;
+    setGuardandoCambioPuntual(true);
+    setErrorAlcanceReajuste(null);
+    try {
+      await moverClaseCompletaEnRepositorio(
+        pendiente.fechaOrigen,
+        pendiente.fechaDestino,
+        "cambio",
+        pendiente.grupoId
+      );
+      await reprogramarNotificaciones(false);
+      await cargar();
+      setAlcanceReajustePendiente(null);
+      setMotivoMovimiento(null);
+      setSelectedDate(null);
+      setDetailGroupId(null);
+    } catch (error) {
+      setErrorAlcanceReajuste(
+        error instanceof Error ? error.message : "No se realizó ningún cambio."
+      );
+    } finally {
+      bloqueoCambioPuntual.current = false;
+      setGuardandoCambioPuntual(false);
+    }
+  };
+
+  const moverEstaYSiguientes = () => {
+    const pendiente = alcanceReajustePendiente;
+    if (!pendiente || guardandoCambioPuntual) return;
+    const confirmacion = prepararConfirmacionReajuste(
+      { id: pendiente.grupoId, nombre: pendiente.grupoNombre },
+      pendiente.fechaOrigen,
+      pendiente.fechaDestino,
+      pendiente.nuevoDia
+    );
+    setAlcanceReajustePendiente(null);
+    setErrorAlcanceReajuste(null);
+    setErrorReajuste(null);
+    setReajustePendiente(confirmacion.reajustePendiente);
+  };
+
   const confirmarReajuste = async () => {
     if (!reajustePendiente || bloqueoReajuste.current.actual) return;
     setGuardandoReajuste(true);
@@ -379,7 +432,8 @@ export default function CalendarioScreen() {
           reajustar: pendiente => reajustarGrupo(
             pendiente.grupoId,
             pendiente.fechaOrigen,
-            pendiente.fechaDestino
+            pendiente.fechaDestino,
+            pendiente.nuevoDia
           ).then(() => undefined),
           reprogramarNotificaciones: () => reprogramarNotificaciones(false).then(() => undefined),
           recargar: () => cargar().then(() => undefined),
@@ -582,6 +636,7 @@ export default function CalendarioScreen() {
           selectorModeloVisible,
           selectorMotivoVisible,
           reajustePendiente,
+          alcanceReajustePendiente,
         })}
         fecha={selectedDate}
         esDetalleGrupo={!!detailGroupId}
@@ -668,6 +723,14 @@ export default function CalendarioScreen() {
         error={errorReajuste}
         onCancelar={cancelarReajuste}
         onConfirmar={confirmarReajuste}
+      />
+      <ElegirAlcanceReajusteModal
+        pendiente={alcanceReajustePendiente}
+        guardando={guardandoCambioPuntual}
+        error={errorAlcanceReajuste}
+        onCancelar={cancelarAlcanceReajuste}
+        onSoloEsta={moverSoloEstaClase}
+        onTodas={moverEstaYSiguientes}
       />
       <CompartirCalendarioModal
         visible={calendarioCompartibleVisible}

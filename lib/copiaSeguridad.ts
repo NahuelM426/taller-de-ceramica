@@ -9,7 +9,7 @@ type ValorSql = string | number | null;
 type FilaCopia = Record<string, ValorSql>;
 
 const FORMATO = "taller-de-ceramica";
-const VERSION_FORMATO = 10;
+const VERSION_FORMATO = 11;
 const ARCHIVO_EMERGENCIA = "taller-ceramica-antes-de-restaurar.json";
 const LIMITE_ARCHIVO = 100 * 1024 * 1024;
 
@@ -72,7 +72,7 @@ const tablas = [
     nombre: "reajustes_grupo",
     columnas: [
       "id", "grupo_id", "fecha_origen", "fecha_destino", "fecha_inicio_anterior",
-      "fecha_inicio_nueva", "fecha_hasta", "agenda_anterior", "agenda_generada",
+      "fecha_inicio_nueva", "dia_anterior", "dia_nuevo", "fecha_hasta", "agenda_anterior", "agenda_generada",
       "creado_en", "deshecho_en",
     ],
   },
@@ -129,7 +129,7 @@ function validarCopia(valor: unknown): CopiaSeguridad {
   }
   const versionRecibida = candidata.versionFormato;
   if (typeof versionRecibida !== "number" ||
-      ![1, 2, 3, 4, 5, 6, 7, 8, 9, VERSION_FORMATO].includes(versionRecibida)) {
+      ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, VERSION_FORMATO].includes(versionRecibida)) {
     throw new Error("La versión de esta copia todavía no es compatible.");
   }
   if (typeof candidata.creadaEn !== "string" || !candidata.tablas ||
@@ -169,6 +169,12 @@ function validarCopia(valor: unknown): CopiaSeguridad {
       const registro = fila as Record<string, unknown>;
       const limpio: FilaCopia = {};
       for (const columna of tabla.columnas) {
+        if (versionRecibida < 11 && tabla.nombre === "reajustes_grupo" &&
+            (columna === "dia_anterior" || columna === "dia_nuevo") &&
+            !Object.prototype.hasOwnProperty.call(registro, columna)) {
+          limpio[columna] = null;
+          continue;
+        }
         if (versionRecibida < 7 && tabla.nombre === "agenda_alumnos" &&
             columna === "pago_extra_mes" && !Object.prototype.hasOwnProperty.call(registro, columna)) {
           limpio[columna] = null;

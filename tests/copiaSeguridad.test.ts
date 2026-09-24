@@ -135,7 +135,7 @@ describe("copia y restauración de datos", () => {
     await db.runAsync(
       "UPDATE agenda_alumnos SET estado = 'programada' WHERE id = 1"
     );
-    await reajusteRepository.reajustar(1, "2026-08-07", "2026-08-14");
+    await reajusteRepository.reajustar(1, "2026-08-07", "2026-08-12", 3);
     await compartirCopiaSeguridad();
     const uri = ultimoArchivoCompartido();
     assert.ok(uri);
@@ -159,17 +159,24 @@ describe("copia y restauración de datos", () => {
     }>("SELECT fecha,motivo_movimiento,feriado_origen FROM agenda_alumnos WHERE id = 1");
     assert.deepEqual(reajuste, {
       tipo: "reajuste",
-      fecha_recuperacion: "2026-08-14",
+      fecha_recuperacion: "2026-08-12",
     });
     assert.deepEqual(agenda, {
-      fecha: "2026-08-14",
+      fecha: "2026-08-12",
       motivo_movimiento: "reajuste",
       feriado_origen: "2026-08-07",
     });
-    const historial = await db.getFirstAsync<{ fecha_inicio_nueva: string }>(
-      "SELECT fecha_inicio_nueva FROM reajustes_grupo WHERE fecha_origen='2026-08-07'"
+    const historial = await db.getFirstAsync<{
+      fecha_inicio_nueva: string; dia_anterior: number; dia_nuevo: number;
+    }>(
+      `SELECT fecha_inicio_nueva,dia_anterior,dia_nuevo
+       FROM reajustes_grupo WHERE fecha_origen='2026-08-07'`
     );
-    assert.equal(historial?.fecha_inicio_nueva, "2026-08-14");
+    assert.deepEqual(historial, {
+      fecha_inicio_nueva: "2026-08-12",
+      dia_anterior: 5,
+      dia_nuevo: 3,
+    });
   });
 
   test("acepta una copia anterior de formato 2 sin historial de reajustes", async () => {

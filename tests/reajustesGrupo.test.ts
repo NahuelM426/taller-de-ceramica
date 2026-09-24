@@ -76,6 +76,38 @@ describe("reajuste del patrón mensual", () => {
     assert.equal(etiquetaMovimientoClase("reajuste"), "Reajuste");
   });
 
+  test("puede cambiar el día habitual y deshacer restaura el día anterior", async () => {
+    const db = await databasePromise;
+
+    await reajusteRepository.reajustar(1, "2026-09-01", "2026-09-02", 3);
+
+    assert.deepEqual(await fechasRegulares(), [
+      "2026-09-02", "2026-09-16", "2026-10-07", "2026-10-21",
+    ]);
+    const reajustado = await db.getFirstAsync<{
+      dia: number; fecha_inicio: string; dia_anterior: number; dia_nuevo: number;
+    }>(
+      `SELECT g.dia,g.fecha_inicio,r.dia_anterior,r.dia_nuevo
+       FROM grupos g JOIN reajustes_grupo r ON r.grupo_id=g.id WHERE g.id=1`
+    );
+    assert.deepEqual(reajustado, {
+      dia: 3,
+      fecha_inicio: "2026-09-02",
+      dia_anterior: 2,
+      dia_nuevo: 3,
+    });
+
+    await reajusteRepository.deshacer(1, "2026-09-01");
+
+    const restaurado = await db.getFirstAsync<{ dia: number; fecha_inicio: string }>(
+      "SELECT dia,fecha_inicio FROM grupos WHERE id=1"
+    );
+    assert.deepEqual(restaurado, { dia: 2, fecha_inicio: "2026-09-01" });
+    assert.deepEqual(await fechasRegulares(), [
+      "2026-09-01", "2026-09-15", "2026-10-06", "2026-10-20",
+    ]);
+  });
+
   test("permite reajustar 01/09 al 15/09 con la agenda anual ya generada", async () => {
     const db = await databasePromise;
     await reiniciarBasePrueba();
@@ -517,7 +549,7 @@ describe("reajuste del patrón mensual", () => {
       minutos_antes: 1440,
       frecuencia: "quincenal",
       fecha_inicio: "2026-09-08",
-    });
+    }, "2026-08-24");
 
     assert.deepEqual(await fechasRegulares(), [
       "2026-09-08", "2026-09-22", "2026-10-13", "2026-10-27",
@@ -556,7 +588,7 @@ describe("reajuste del patrón mensual", () => {
       minutos_antes: 1440,
       frecuencia: "quincenal",
       fecha_inicio: "2026-09-08",
-    });
+    }, "2026-08-24");
 
     const historial = await reajusteRepository.obtenerUltimoActivo(1);
     assert.equal(historial?.fecha_origen, "2026-09-15");

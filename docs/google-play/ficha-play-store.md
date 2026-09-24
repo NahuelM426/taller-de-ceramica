@@ -5,7 +5,7 @@
 - Nombre de la aplicación: **Taller de Cerámica**
 - Desarrollador: **Nahuel Apps**
 - Nombre del paquete: `com.nahuel.tallerdeceramica`
-- Versión preparada: `1.0.11` (`versionCode` 12)
+- Versión preparada: `1.0.13` (`versionCode` 14)
 - API objetivo: Android 16 / API 36 mediante Expo SDK 54
 - Categoría sugerida: **Productividad**
 - Precio: **Gratis**

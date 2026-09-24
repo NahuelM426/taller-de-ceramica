@@ -43,10 +43,9 @@ export default function HoyScreen() {
     const fin = new Date();
     fin.setDate(fin.getDate() + 60);
     const hoyTexto = fechaLocal();
-    const inicioTexto = `${hoyTexto.slice(0, 7)}-01`;
     const finTexto = fechaLocal(fin);
     const [g, a, agenda, feriadosCargados, estadoCopia] = await Promise.all([
-      listarGrupos(), listarAlumnos(), agendaDelMes(inicioTexto, finTexto),
+      listarGrupos(), listarAlumnos(), agendaDelMes(hoyTexto, finTexto),
       listarFeriados(hoyTexto, finTexto), estadoCopiaSeguridad(),
     ]);
     setGrupos(g);
@@ -61,7 +60,7 @@ export default function HoyScreen() {
   useFocusEffect(useCallback(() => { cargar(); }, [cargar]));
 
   const clasesVisibles = useMemo(
-    () => armarClases(grupos, agendaProxima, feriados, new Date(), 15),
+    () => armarClases(grupos, agendaProxima, feriados, new Date(), 10),
     [grupos, agendaProxima, feriados]
   );
 
@@ -194,10 +193,10 @@ export default function HoyScreen() {
           />
         </View>
 
-        <Text style={ui.sectionLabel}>CLASES DE LOS PRÓXIMOS 15 DÍAS</Text>
+        <Text style={ui.sectionLabel}>HOY Y PRÓXIMOS 10 DÍAS</Text>
         {!clasesVisibles.length && (
           <Empty
-            title={grupos.length ? "No hay clases próximas" : "El taller está vacío"}
+            title={grupos.length ? "No hay clases en los próximos 10 días" : "El taller está vacío"}
             text={grupos.length
               ? "Revisá la organización desde el calendario mensual."
               : "Empezá creando el primer grupo desde la pestaña Mes."}

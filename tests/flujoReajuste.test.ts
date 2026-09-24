@@ -34,6 +34,24 @@ describe("confirmación visible de Reajuste", () => {
     }), false);
   });
 
+  test("el detalle queda oculto mientras se elige si mueve una o todas", () => {
+    assert.equal(detalleDiaDebeEstarVisible({
+      fechaSeleccionada: "2026-09-01",
+      selectorAlumnoVisible: false,
+      selectorFechaVisible: false,
+      selectorModeloVisible: false,
+      reajustePendiente: null,
+      alcanceReajustePendiente: {
+        grupoId: 7,
+        grupoNombre: "A",
+        fechaOrigen: "2026-09-01",
+        fechaDestino: "2026-09-02",
+        diaAnterior: 2,
+        nuevoDia: 3,
+      },
+    }), false);
+  });
+
   test("la confirmación queda disponible inmediatamente al cerrar el selector", () => {
     const estado = prepararConfirmacionReajuste(grupo, "2026-09-01", "2026-09-08");
     assert.equal(estado.selectorFechaVisible, false);

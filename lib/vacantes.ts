@@ -13,6 +13,10 @@ export function armarClases(
   cantidadDias = 60
 ) {
   const inicio = new Date(desde.getFullYear(), desde.getMonth(), desde.getDate(), 12);
+  const fin = new Date(inicio);
+  fin.setDate(fin.getDate() + cantidadDias);
+  const inicioTexto = fechaLocal(inicio);
+  const finTexto = fechaLocal(fin);
   const grupoEstaMovido = (fecha: string, grupoId: number) => feriados.some(item =>
     item.fecha === fecha && (item.grupo_id === 0 || item.grupo_id === grupoId)
   );
@@ -29,7 +33,9 @@ export function armarClases(
     });
   }
 
-  agenda.forEach(item => {
+  agenda.filter(item =>
+    item.fecha >= inicioTexto && item.fecha <= finTexto
+  ).forEach(item => {
     if (!grupoEstaMovido(item.fecha, item.grupo_id)) {
       claves.add(`${item.fecha}|${item.grupo_id}`);
     }

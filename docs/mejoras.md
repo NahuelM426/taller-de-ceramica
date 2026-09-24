@@ -327,3 +327,34 @@ No se generó ni publicó una versión de producción como parte de este cambio.
   nombre para identificar rápidamente lo que el taller debe a cada alumno.
 - Una clase extra pagada que se cancela conserva el crédito a favor, incluso si
   se había cobrado por separado.
+
+## Preparación de la versión 1.0.12
+
+- Se incrementó la versión pública a `1.0.12` con `versionCode` 13 porque Google
+  Play ya había registrado el código 12 y no permite volver a utilizarlo.
+- La pestaña Hoy muestra las clases de la fecha actual y de los 10 días
+  siguientes. Las fechas anteriores nunca se incorporan a esa lista y las
+  próximas vacantes continúan disponibles desde su acceso específico.
+
+## Alcance del reajuste
+
+- Después de elegir la nueva fecha, Reajuste pregunta si se mueve únicamente esa
+  clase o si también se cambia el patrón de las clases habituales siguientes.
+- **Solo esta clase** conserva el día y las fechas futuras del grupo y permite
+  deshacer el movimiento como un cambio puntual.
+- **Esta y las siguientes** permite elegir otro día de la semana, actualiza el
+  día habitual del grupo y regenera su agenda futura dentro de una transacción.
+- El historial conserva el día anterior y el nuevo para que Deshacer cambio
+  restaure correctamente el patrón original.
+- Las copias de seguridad incorporan estos datos y siguen aceptando respaldos
+  generados por versiones anteriores.
+
+## Preparación de la versión 1.0.13
+
+- Se incrementó la versión pública a `1.0.13` con `versionCode` 14 para generar
+  un nuevo AAB aceptado por Google Play.
+- Hoy reúne la fecha actual y los 10 días siguientes, sin incluir clases pasadas.
+- Reajuste permite elegir entre mover solamente la clase seleccionada o cambiar
+  también el día y el patrón de todas las clases habituales futuras.
+- Los cambios puntuales y los reajustes completos se pueden deshacer de forma
+  independiente y conservan la compatibilidad de las copias de seguridad.

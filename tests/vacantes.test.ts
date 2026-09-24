@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import {
+  armarClases,
   calcularLugaresDisponibles,
   calcularVacantesLiberadas,
 } from "../lib/vacantes";
@@ -25,7 +26,8 @@ function agenda(
   id: number,
   tipo: AgendaAlumno["tipo"] = "regular",
   estado: AgendaAlumno["estado"] = "programada",
-  cubreAgendaId: number | null = null
+  cubreAgendaId: number | null = null,
+  fecha = "2026-08-07"
 ): AgendaAlumno {
   return {
     id,
@@ -35,7 +37,7 @@ function agenda(
     grupo_nombre: "Viernes A",
     grupo_color: "#315B50",
     hora: "18:00",
-    fecha: "2026-08-07",
+    fecha,
     tipo,
     estado,
     modelo_id: null,
@@ -67,5 +69,28 @@ describe("vacantes y coberturas", () => {
 
     assert.equal(calcularLugaresDisponibles(grupo, items), 1);
     assert.equal(calcularVacantesLiberadas(items), 0);
+  });
+
+  test("la vista de hoy incluye hoy y diez días hacia adelante, nunca días anteriores", () => {
+    const items = [
+      agenda(1, "regular", "programada", null, "2026-08-06"),
+      agenda(2, "regular", "programada", null, "2026-08-07"),
+      agenda(3, "manual", "programada", null, "2026-08-08"),
+      agenda(4, "manual", "programada", null, "2026-08-17"),
+      agenda(5, "manual", "programada", null, "2026-08-18"),
+    ];
+
+    const clases = armarClases(
+      [grupo],
+      items,
+      [],
+      new Date(2026, 7, 7, 12),
+      10
+    );
+
+    assert.deepEqual(clases.map(item => item.fecha), [
+      "2026-08-07", "2026-08-08", "2026-08-17",
+    ]);
+    assert.deepEqual(clases[0].agenda.map(item => item.id), [2]);
   });
 });

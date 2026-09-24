@@ -89,6 +89,36 @@ describe("movimientos aislados por feriado o compromiso", () => {
     assert.equal(grupo?.fecha_inicio, fechaOriginal);
   });
 
+  test("un cambio puntual mueve solamente la clase elegida y permite deshacer", async () => {
+    const db = await databasePromise;
+    await db.runAsync(
+      `INSERT INTO agenda_alumnos
+       (id,alumno_id,grupo_id,fecha,tipo,estado)
+       VALUES (11,1,1,'2026-08-14','regular','programada')`
+    );
+
+    await feriadoRepository.mover(fechaOriginal, "2026-08-09", "cambio", 1);
+
+    const agendas = await db.getAllAsync<{ id: number; fecha: string }>(
+      "SELECT id,fecha FROM agenda_alumnos WHERE id IN (10,11) ORDER BY id"
+    );
+    const movimiento = await db.getFirstAsync<{ tipo: string; motivo: string }>(
+      "SELECT tipo,motivo FROM feriados WHERE fecha=? AND grupo_id=1",
+      fechaOriginal
+    );
+    assert.deepEqual(agendas, [
+      { id: 10, fecha: "2026-08-09" },
+      { id: 11, fecha: "2026-08-14" },
+    ]);
+    assert.deepEqual(movimiento, { tipo: "cambio", motivo: "Cambio puntual de fecha" });
+
+    await feriadoRepository.quitar(fechaOriginal, 1);
+    const restaurada = await db.getFirstAsync<{ fecha: string }>(
+      "SELECT fecha FROM agenda_alumnos WHERE id=10"
+    );
+    assert.equal(restaurada?.fecha, fechaOriginal);
+  });
+
   test("al revertir elimina la ausencia de la fecha movida y su pendiente", async () => {
     const db = await databasePromise;
     await feriadoRepository.mover(fechaOriginal, fechaRecuperacion, "compromiso", 1);

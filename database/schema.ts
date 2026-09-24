@@ -73,7 +73,7 @@ export async function crearEsquema(db: Database) {
       motivo TEXT NOT NULL DEFAULT 'Feriado',
       fecha_recuperacion TEXT,
       tipo TEXT NOT NULL DEFAULT 'feriado'
-        CHECK(tipo IN ('feriado','compromiso','reajuste')),
+        CHECK(tipo IN ('feriado','compromiso','reajuste','cambio')),
       PRIMARY KEY (fecha, grupo_id)
     );
     CREATE TABLE IF NOT EXISTS reajustes_grupo (
@@ -83,6 +83,8 @@ export async function crearEsquema(db: Database) {
       fecha_destino TEXT NOT NULL,
       fecha_inicio_anterior TEXT,
       fecha_inicio_nueva TEXT NOT NULL,
+      dia_anterior INTEGER,
+      dia_nuevo INTEGER,
       fecha_hasta TEXT NOT NULL,
       agenda_anterior TEXT NOT NULL,
       agenda_generada TEXT NOT NULL DEFAULT '[]',
@@ -126,7 +128,8 @@ export async function migrarTiposMovimientoClase(db: Database) {
   const columnas = await db.getAllAsync<{ name: string }>("PRAGMA table_info(feriados)");
   const tieneGrupo = columnas.some(item => item.name === "grupo_id");
   const claveCompuesta = tabla?.sql?.replace(/\s/g, "").includes("PRIMARYKEY(fecha,grupo_id)");
-  if (tabla?.sql?.includes("'reajuste'") && tieneGrupo && claveCompuesta) return;
+  if (tabla?.sql?.includes("'reajuste'") && tabla.sql.includes("'cambio'") &&
+      tieneGrupo && claveCompuesta) return;
 
   await db.withTransactionAsync(async () => {
     await db.execAsync(`
@@ -137,7 +140,7 @@ export async function migrarTiposMovimientoClase(db: Database) {
         motivo TEXT NOT NULL DEFAULT 'Feriado',
         fecha_recuperacion TEXT,
         tipo TEXT NOT NULL DEFAULT 'feriado'
-          CHECK(tipo IN ('feriado','compromiso','reajuste')),
+          CHECK(tipo IN ('feriado','compromiso','reajuste','cambio')),
         PRIMARY KEY (fecha, grupo_id)
       );
     `);
@@ -193,6 +196,15 @@ export async function migrarColumnas(db: Database) {
     await db.execAsync("ALTER TABLE feriados ADD COLUMN tipo TEXT NOT NULL DEFAULT 'feriado'");
   }
   await migrarTiposMovimientoClase(db);
+  const reajustes = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(reajustes_grupo)"
+  );
+  if (!reajustes.some(item => item.name === "dia_anterior")) {
+    await db.execAsync("ALTER TABLE reajustes_grupo ADD COLUMN dia_anterior INTEGER");
+  }
+  if (!reajustes.some(item => item.name === "dia_nuevo")) {
+    await db.execAsync("ALTER TABLE reajustes_grupo ADD COLUMN dia_nuevo INTEGER");
+  }
   const modelos = await db.getAllAsync<{ name: string }>("PRAGMA table_info(modelos)");
   const columnasModelo: Array<[string, string]> = [
     ["tipo_arcilla", "TEXT"], ["imagen_1", "TEXT"],

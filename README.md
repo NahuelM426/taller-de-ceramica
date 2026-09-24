@@ -26,14 +26,14 @@ Permite saber rápidamente quién viene a cada clase, qué lugares están dispon
 - Gestión de alumnos, teléfonos, grupos y cambios permanentes de grupo.
 - Grupos configurables por día, horario, capacidad y frecuencia semanal o de dos clases por mes.
 - Generación y mantenimiento automático de la agenda recurrente desde una fecha inicial.
-- Agenda general con próximas clases, asistencia y accesos rápidos a pendientes y vacantes.
+- Agenda general con las clases de hoy y de los próximos 10 días, sin mostrar fechas anteriores.
 - Cálculo de cupos estructurales y lugares liberados por ausencias, con avisos de vacantes para compartir.
 - Registro y reversión de ausencias con un libro de movimientos para clases pendientes.
 - Recuperaciones de clases habituales y de clases extra, con consumo y devolución segura del saldo.
 - Cambios individuales de la próxima clase para ocupar otro lugar disponible.
 - Clases extra pagadas, a favor o pendientes de cobro.
 - Traslado de grupos completos por feriados o compromisos, con posibilidad de deshacer el cambio.
-- Reajuste del patrón futuro de grupos de dos clases por mes, con historial y restauración.
+- Reajuste con elección entre mover solamente la clase seleccionada o cambiar también el día y el patrón de todas las clases futuras, con historial y restauración.
 - Seguimiento mensual de pagos, cantidad de clases abonadas y extras compradas, usadas o adeudadas.
 - Filtros de alumnos con pendientes o pagos faltantes y recordatorios mensuales configurables.
 - Calendario mensual con grupos, asistencias, movimientos y vacantes visibles por fecha.
@@ -127,4 +127,4 @@ La configuración de compilación está en `eas.json`. Los textos, declaraciones
 
 ## Estado del proyecto
 
-Proyecto funcional en desarrollo continuo, orientado a Android y preparado para distribución mediante Expo EAS y Google Play.
+Versión `1.0.13` (`versionCode` 14) preparada para Android y Google Play. El proyecto continúa en desarrollo y puede generar el AAB mediante Expo EAS o con el entorno Android local.

@@ -41,6 +41,10 @@ test("migra la restricción de movimientos y conserva los datos existentes", asy
   assert.equal(reajuste?.tipo, "reajuste");
   await db.runAsync(
     `INSERT INTO feriados (fecha,grupo_id,motivo,fecha_recuperacion,tipo)
+     VALUES ('2026-08-28',1,'Cambio puntual','2026-08-29','cambio')`
+  );
+  await db.runAsync(
+    `INSERT INTO feriados (fecha,grupo_id,motivo,fecha_recuperacion,tipo)
      VALUES ('2026-08-21',2,'Otro grupo','2026-08-23','compromiso')`
   );
 
@@ -48,7 +52,7 @@ test("migra la restricción de movimientos y conserva los datos existentes", asy
   const cantidad = await db.getFirstAsync<{ total: number }>(
     "SELECT COUNT(*) AS total FROM feriados"
   );
-  assert.equal(cantidad?.total, 4);
+  assert.equal(cantidad?.total, 5);
 });
 
 test("agrega el historial de reajustes a una base existente de forma idempotente", async () => {
@@ -73,6 +77,11 @@ test("agrega el historial de reajustes a una base existente de forma idempotente
   );
   assert.equal(grupo?.nombre, "Existente");
   assert.equal(tabla?.nombre, "reajustes_grupo");
+  const columnas = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(reajustes_grupo)"
+  );
+  assert.ok(columnas.some(columna => columna.name === "dia_anterior"));
+  assert.ok(columnas.some(columna => columna.name === "dia_nuevo"));
 });
 
 test("agrega créditos usados y vínculo de clase extra a una base existente", async () => {

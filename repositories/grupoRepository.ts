@@ -25,7 +25,7 @@ export const grupoRepository = {
     );
   },
 
-  async editar(id: number, data: GrupoInput) {
+  async editar(id: number, data: GrupoInput, desdeReajuste = fechaLocal()) {
     const db = await databasePromise;
     const anterior = await db.getFirstAsync<Grupo>("SELECT * FROM grupos WHERE id = ? AND activo = 1", id);
     let fechaInicioFinal = data.fecha_inicio;
@@ -38,7 +38,11 @@ export const grupoRepository = {
       anterior.frecuencia === "quincenal" &&
       data.frecuencia === "quincenal"
     ) {
-      const resultado = await reajustarGrupoDesdeFechaInicio(id, data.fecha_inicio);
+      const resultado = await reajustarGrupoDesdeFechaInicio(
+        id,
+        data.fecha_inicio,
+        desdeReajuste
+      );
       fechaInicioFinal = resultado.fechaDestino;
       fechaReajustada = true;
     }
